@@ -260,6 +260,6 @@ Proprietäre Technologie
 Alle Rechte vorbehalten.
 
 Kontakt für Partnerschaften, Forschung, Enterprise-Lizenzierung:
-**rald.kruemmel<qoutlook.de**
+**ralf.kruemmel@outlook.de**
 
 ---
