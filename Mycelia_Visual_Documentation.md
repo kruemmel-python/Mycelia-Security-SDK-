@@ -1,3 +1,5 @@
+
+
 # **Mycelia Security SDK – Visual Documentation (V4 Enterprise)**
 
 Die folgende Dokumentation beschreibt die zentralen Oberflächen, Funktionsabläufe und Systemkomponenten der Mycelia V4 Enterprise Suite anhand visueller Beispiele.
@@ -17,6 +19,7 @@ Alle gezeigten Komponenten verwenden den proprietären Treiber **CC_OpenCl.dll**
 ### **Startansicht**
 
 Die Startansicht zeigt:
+
 <img width="877" height="727" alt="MYCELIA_VAULT" src="https://github.com/user-attachments/assets/b7bef53c-c298-475d-87af-59085cdb7149" />
 
 * GPU-Engine-Status (*ENGINE AKTIV*)
@@ -34,6 +37,7 @@ Die Startansicht zeigt:
 ## **2. Verschlüsselung (Streaming, GPU-beschleunigt)**
 
 Beispiel: Verschlüsselung einer PDF-Datei („Die Kunst des Prompting“).
+
 <img width="877" height="727" alt="MYCELIA_VAULT2" src="https://github.com/user-attachments/assets/93b95d2d-ac0d-41f8-b79d-7ac9249fcf99" />
 
 Der Vault generiert:
@@ -56,6 +60,7 @@ Beispiel-Log:
 ## **3. Automatische Entschlüsselung & Integritätsprüfung**
 
 Nach der Verschlüsselung kann optional sofort entschlüsselt werden.
+
 <img width="877" height="727" alt="MYCELIA_VAULT3" src="https://github.com/user-attachments/assets/e6935ee7-4527-4b15-a2e3-9c5257eb1e76" />
 
 Die Vault-Engine erkennt:
@@ -85,6 +90,7 @@ Dieses Resultat beweist:
 ## **4. Mycelia Encrypted Chat (MCP-Protokoll)**
 
 ### **Passwort-Eingabe (Shared Secret)**
+
 <img width="817" height="731" alt="chat1" src="https://github.com/user-attachments/assets/4df133d4-1ce3-4aaa-9f0f-70c6a181dfd5" />
 
 Vor Verbindungsaufbau wird das Shared Secret abgefragt.
@@ -97,6 +103,7 @@ Es bildet die Basis des **Masking Layers**:
 ---
 
 ### **Gesicherter Chat-Kanal**
+
 <img width="1632" height="732" alt="chat2" src="https://github.com/user-attachments/assets/4705d3d7-f817-4342-a0d0-8c5f73e6ad4c" />
 
 Nach erfolgreichem Austausch zeigt der Chat:
@@ -144,12 +151,13 @@ Der Empfänger speichert automatisch:
 
 Der MCP-Server ist ein reiner Weiterleiter („Blind Relay“).
 Er sieht nur:
+
 <img width="582" height="164" alt="server" src="https://github.com/user-attachments/assets/3597daf4-544d-416b-96ab-b80a4c28e519" />
 
 * MaskedSeed
 * Payload-Längen
 * Zlib-komprimierte XOR-Pakete
-* niemals Klartext oder Schlüssel
+* **niemals Klartext oder Schlüssel**
 
 Beispiel:
 
@@ -159,7 +167,7 @@ Beispiel:
 [Server] Connected with ('127.0.0.1', 49163)
 ```
 
-Damit erfüllt der Server das Zero-Knowledge-Prinzip.
+Damit erfüllt der Server das **Zero-Knowledge-Prinzip**.
 
 ---
 
@@ -187,24 +195,35 @@ kein Klartext, keine Schlüssel, kein Zugriff auf Payloads
 
 Alle Kernkomponenten der Enterprise-Kryptografie laufen real.
 
-## **6. Dateistruktur-Hinweis**
+---
+
+## **7. Dateistruktur-Hinweis**
 
 ```
 Mycelia-Security-SDK/
 │
 ├── tools/
-│   ├── MyceliaChat_Client.exe           # Client (DLL embedded)
+│   ├── MyceliaChat_Client.exe           # Chat-Client (DLL embedded)
 │   ├── MyceliaChat_Server.exe           # Relay Server (pure Python → exe)
 │   ├── MyceliaVault_Enterprise.exe      # Vault GUI (DLL embedded)
 │   └── build/
 │       └── kernel_cache/                # Automatisch erstellter GPU-Kernel-Cache
 │           ├── gfx90c_*_kernel1.bin
 │           ├── gfx90c_*_kernel2.bin
-│           ├── gfx90c_*_...             # ~100 JIT-optimierte kernels
+│           ├── gfx90c_*_...             # ~100 JIT-optimierte Kernels
 │           └── ...
 │
-
+└── Doku/
+    └── MYCELIA VAULT/
+        ├── MYCELIA_VAULT.png
+        ├── MYCELIA_VAULT2.png
+        ├── MYCELIA_VAULT3.png
+        ├── chat1.png
+        ├── chat2.png
+        ├── server.png
+        └── promting_book
 ```
 
 ---
+
 
