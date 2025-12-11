@@ -179,7 +179,7 @@ Mycelia-Security-SDK/
 
 Die vollständige Bilddokumentation ist hier verfügbar:
 
-📄 **[Mycelia Visual Documentation](Doku/Mycelia_Visual_Documentation.md)**
+📄 **[Mycelia Visual Documentation](Mycelia_Visual_Documentation.md)**
 
 Sie enthält:
 
@@ -193,7 +193,7 @@ Sie enthält:
 
 # **Architektur & Whitepaper**
 
-📄 **[architecture.md](Doku/architecture.md)** – erklärt:
+📄 **[architecture.md](architecture.md)** – erklärt:
 
 * Chaos-Engine
 * Seed-Mechaniken
@@ -205,7 +205,7 @@ Sie enthält:
 
 # **API-Referenz**
 
-📄 **[API Reference.md](Doku/API%20Reference.md)** – für:
+📄 **[API Reference.md](API%20Reference.md)** – für:
 
 * `myc_create_context`
 * `myc_set_seed`
