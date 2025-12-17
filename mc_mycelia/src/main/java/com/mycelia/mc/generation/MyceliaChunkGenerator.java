@@ -29,7 +29,7 @@ public class MyceliaChunkGenerator extends ChunkGenerator {
         this.scale = scale;
         this.terrainNoise = new SimplexNoiseGenerator(seed);
         // Zweiter Generator mit versetztem Seed für Erze/Adern
-        this.oreNoise = new SimplexNoiseGenerator(seed ^ 0xCAFEEBABE);
+        this.oreNoise = new SimplexNoiseGenerator(seed ^ 0xCAFEEBABEL);
     }
 
     public static MyceliaChunkGenerator fromConfig(FileConfiguration config, long seed) {
