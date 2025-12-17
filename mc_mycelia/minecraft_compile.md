@@ -14,6 +14,7 @@ Diese Anleitung beschreibt Schritt für Schritt, wie du das Paper/Spigot-Plugin 
 - `mc_mycelia/settings.gradle` – setzt den Projektnamen.
 - `mc_mycelia/src/main/resources/plugin.yml` – Bukkit-Metadaten (wird ins JAR kopiert).
 - Quellcode unter `mc_mycelia/src/main/java/...`.
+- `python/mein_subqg_seed_script.py` – Beispiel-Seed-Provider, der `bin/CC_OpenCl.dll` lädt und einen 64-Bit-Seed ausgibt.
 
 ## Build mit vorhandenem Gradle (empfohlen, leichtgewichtig)
 1. Wechsle ins Modulverzeichnis:
@@ -52,6 +53,10 @@ Diese Anleitung beschreibt Schritt für Schritt, wie du das Paper/Spigot-Plugin 
      timeoutSeconds: 5
    ```
 4. Teste den Befehl im Spiel (mit passenden Rechten):
+   ```
+5. Für den mitgelieferten Seed-Provider `python/mein_subqg_seed_script.py` muss `bin/CC_OpenCl.dll` relativ zum Skript vorhanden sein. Typischer Aufruf von der Server-Root (Windows):
+   ```powershell
+   python python/mein_subqg_seed_script.py --gpu 0
    ```
    /myceliaworld testwelt
    # optional mit explizitem Seed:

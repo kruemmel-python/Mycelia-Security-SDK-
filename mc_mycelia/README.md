@@ -34,6 +34,16 @@ driver:
 ```
 Der Prozess muss eine Integer-Zahl (long) in die erste Zeile von STDOUT schreiben. Bei Fehlern oder Timeouts fällt das Plugin automatisch auf einen kryptografisch sicheren Seed zurück und loggt den Grund.
 
+Beigefügtes Beispiel-Skript: `python/mein_subqg_seed_script.py`
+- Lädt `CC_OpenCl.dll` aus `../bin` relativ zum Skript.
+- Initialisiert Mycelia, erzeugt einen Context, setzt einen Basis-Seed (optional via `--seed`) und liest 8 Bytes Keystream als Welt-Seed aus.
+- Fällt bei Fehlern auf einen kryptografisch sicheren OS-Seed zurück und gibt diesen aus.
+- Aufrufbeispiel (Windows, Papier-Server-Root als Arbeitsverzeichnis):
+  ```powershell
+  python python/mein_subqg_seed_script.py --gpu 0
+  ```
+  Stelle sicher, dass `bin/CC_OpenCl.dll` im Repo vorhanden und zugreifbar ist.
+
 ## Bauen
 Das Projekt ist als eigenständiges Gradle-Modul ausgelegt (Java 21, passend zu Paper 1.21.x):
 ```bash
