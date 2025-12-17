@@ -74,19 +74,22 @@ public class MyceliaDriver {
                 return Optional.empty();
             }
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line = reader.readLine();
-                if (line == null || line.isBlank()) {
-                    logger.warning("Treiber lieferte keinen Seed.");
-                    return Optional.empty();
+                List<String> lines = new ArrayList<>();
+                for (String line; (line = reader.readLine()) != null; ) {
+                    if (!line.isBlank()) {
+                        lines.add(line.trim());
+                    }
                 }
-                try {
-                    long seed = Long.parseLong(line.trim());
-                    logger.info("Seed aus Mycelia-Treiber empfangen: " + seed);
-                    return Optional.of(seed);
-                } catch (NumberFormatException nfe) {
-                    logger.warning("Ungültiger Seed aus Treiber: '" + line + "'.");
-                    return Optional.empty();
+
+                Optional<Long> parsed = parseLastLongLine(lines);
+                if (parsed.isPresent()) {
+                    logger.info("Seed aus Mycelia-Treiber empfangen: " + parsed.get());
+                    return parsed;
                 }
+
+                String last = lines.isEmpty() ? "<leer>" : lines.get(lines.size() - 1);
+                logger.warning("Ungültiger Seed aus Treiber. Letzte Zeile: '" + last + "'.");
+                return Optional.empty();
             }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
@@ -96,6 +99,21 @@ public class MyceliaDriver {
             logger.warning("Treiber-Aufruf fehlgeschlagen: " + summarizeException(ex));
             return Optional.empty();
         }
+    }
+
+    private Optional<Long> parseLastLongLine(List<String> lines) {
+        for (int i = lines.size() - 1; i >= 0; i--) {
+            String candidate = lines.get(i).trim();
+            if (!candidate.matches("^-?\\d+$")) {
+                continue;
+            }
+            try {
+                return Optional.of(Long.parseLong(candidate));
+            } catch (NumberFormatException ignore) {
+                // Falls doch außerhalb von Long: weiter nach oben suchen
+            }
+        }
+        return Optional.empty();
     }
 
     private List<String> tokenize(String commandLine) {

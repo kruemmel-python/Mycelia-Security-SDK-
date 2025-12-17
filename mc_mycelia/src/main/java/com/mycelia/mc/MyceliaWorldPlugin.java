@@ -20,5 +20,13 @@ public class MyceliaWorldPlugin extends JavaPlugin {
         } else {
             getLogger().severe("mc_mycelia konnte den Command 'myceliaworld' nicht registrieren.");
         }
+
+        // Optionales Warmup: lädt den Treiber einmal asynchron, damit Kernel-Vorbereitung/IO
+        // nicht den ersten Command blockiert oder in den Timeout läuft.
+        getServer().getScheduler().runTaskAsynchronously(this, () -> {
+            getLogger().info("[mc_mycelia] Warmup: Treiber wird vorgeladen...");
+            myceliaDriver.resolveSeedAsync(Optional.empty()).join();
+            getLogger().info("[mc_mycelia] Warmup: abgeschlossen.");
+        });
     }
 }

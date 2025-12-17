@@ -3,7 +3,8 @@ driver:
   # SubQG/Mycel-Treiber an. Leer lassen, um direkt auf kryptografisch sichere Seeds
   # zu fallen.
   command: ""
-  timeoutSeconds: 5
+  # Für den ersten Aufruf (Kernel-Warmup) kann ein höheres Timeout nötig sein.
+  timeoutSeconds: 60
 
 world:
   # Basis-Block-ID (z.B. STONE, DEEPSLATE). Wird für die Grundplatte verwendet,
