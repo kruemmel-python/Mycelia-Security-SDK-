@@ -17,8 +17,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 /**
- * Beschafft Seeds über den Mycelia-Treiber (via Subprozess) und liefert
- * bei Problemen einen kryptografisch sicheren Fallback.
+ * Beschafft Welt-Daten über den Mycelia-Treiber (via Subprozess) und liefert
+ * bei Problemen kryptografisch sichere Fallbacks.
  */
 public class MyceliaDriver {
 
@@ -26,35 +26,38 @@ public class MyceliaDriver {
     private final String driverCommand;
     private final Duration timeout;
     private final SecureSeedFallback fallback;
+    private final String defaultBaseBlock;
+    private final String defaultSurfaceBlock;
+    private final String defaultOreBlock;
+    private final double defaultScale;
+    private final int defaultSeaLevel;
 
     public MyceliaDriver(Plugin plugin, FileConfiguration config) {
         this.logger = plugin.getLogger();
-        this.driverCommand = config.getString("driver.command", "");
+        this.driverCommand = normalize(config.getString("driver.command", ""));
         int timeoutSeconds = config.getInt("driver.timeoutSeconds", 5);
         this.timeout = Duration.ofSeconds(Math.max(timeoutSeconds, 1));
         this.fallback = new SecureSeedFallback();
+        this.defaultBaseBlock = config.getString("world.baseBlock", "STONE");
+        this.defaultSurfaceBlock = config.getString("world.surfaceBlock", "MYCELIUM");
+        this.defaultOreBlock = config.getString("world.oreBlock", "AMETHYST_BLOCK");
+        this.defaultScale = config.getDouble("world.scale", 0.025D);
+        this.defaultSeaLevel = config.getInt("world.seaLevel", 40);
     }
 
-    /**
-     * Liefert einen Seed asynchron. Wenn eine Zahl mitgegeben wird, hat diese Vorrang.
-     */
-    public CompletableFuture<Long> resolveSeedAsync(Optional<Long> explicitSeed) {
-        if (explicitSeed.isPresent()) {
-            return CompletableFuture.completedFuture(explicitSeed.get());
-        }
-        return CompletableFuture.supplyAsync(() -> requestSeedFromDriver()
-                .orElseGet(() -> {
-                    long seed = fallback.nextSeed();
-                    logger.warning("Fallback auf sicheren Seed, Treiber nicht erreichbar.");
-                    return seed;
-                }));
+    public CompletableFuture<MyceliaWorldData> resolveWorldDataAsync(Optional<Long> explicitSeed) {
+        return CompletableFuture.supplyAsync(() -> {
+            if (explicitSeed.isPresent()) {
+                return createFallbackData(explicitSeed.get());
+            }
+            return requestWorldDataFromDriver().orElseGet(() -> {
+                logger.warning("Fallback auf sichere Welt-Daten, Treiber nicht erreichbar oder Antwort unbrauchbar.");
+                return createFallbackData(fallback.nextSeed());
+            });
+        });
     }
 
-    public long nextSecureSeed() {
-        return fallback.nextSeed();
-    }
-
-    private Optional<Long> requestSeedFromDriver() {
+    private Optional<MyceliaWorldData> requestWorldDataFromDriver() {
         if (driverCommand == null || driverCommand.isBlank()) {
             return Optional.empty();
         }
@@ -81,15 +84,12 @@ public class MyceliaDriver {
                     }
                 }
 
-                Optional<Long> parsed = parseLastLongLine(lines);
-                if (parsed.isPresent()) {
-                    logger.info("Seed aus Mycelia-Treiber empfangen: " + parsed.get());
-                    return parsed;
+                if (lines.isEmpty()) {
+                    return Optional.empty();
                 }
 
-                String last = lines.isEmpty() ? "<leer>" : lines.get(lines.size() - 1);
-                logger.warning("Ungültiger Seed aus Treiber. Letzte Zeile: '" + last + "'.");
-                return Optional.empty();
+                String payload = lines.get(lines.size() - 1);
+                return parsePayload(payload);
             }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
@@ -101,30 +101,161 @@ public class MyceliaDriver {
         }
     }
 
-    private Optional<Long> parseLastLongLine(List<String> lines) {
-        for (int i = lines.size() - 1; i >= 0; i--) {
-            String candidate = lines.get(i).trim();
-            if (!candidate.matches("^-?\\d+$")) {
+    private MyceliaWorldData parseJson(String json) {
+        long seed = Long.parseLong(extract(json, "seed", String.valueOf(fallback.nextSeed())));
+        String base = extract(json, "baseBlock", defaultBaseBlock);
+        String surface = extract(json, "surfaceBlock", defaultSurfaceBlock);
+        String ore = extract(json, "oreBlock", defaultOreBlock);
+        double scale = Double.parseDouble(extract(json, "scale", String.valueOf(defaultScale)));
+        int seaLevel = Integer.parseInt(extract(json, "seaLevel", String.valueOf(defaultSeaLevel)));
+        return new MyceliaWorldData(seed, base, surface, ore, scale, seaLevel);
+    }
+
+    private String extract(String json, String key, String def) {
+        int keyIndex = json.indexOf(key + "\"");
+        if (keyIndex < 0) {
+            keyIndex = json.indexOf("\"" + key + "\"");
+        }
+        if (keyIndex < 0) {
+            return def;
+        }
+        String[] parts = json.substring(keyIndex).split(":", 2);
+        if (parts.length < 2) {
+            return def;
+        }
+        String valueAndRest = parts[1];
+        int end = valueAndRest.indexOf(',');
+        if (end < 0) {
+            end = valueAndRest.indexOf('}');
+        }
+        if (end < 0) {
+            end = valueAndRest.length();
+        }
+        String cleaned = valueAndRest.substring(0, end).replace("\"", "").trim();
+        if (cleaned.isEmpty()) {
+            return def;
+        }
+        return cleaned;
+    }
+
+    public MyceliaWorldData createFallbackData(long seed) {
+        return new MyceliaWorldData(seed, defaultBaseBlock, defaultSurfaceBlock, defaultOreBlock, defaultScale, defaultSeaLevel);
+    }
+
+    private Optional<MyceliaWorldData> parsePayload(String payload) {
+        String trimmed = payload.trim();
+        if (trimmed.isEmpty()) {
+            return Optional.empty();
+        }
+
+        try {
+            if (trimmed.contains("{")) {
+                return Optional.of(parseJson(trimmed));
+            }
+
+            if (trimmed.matches("-?\\d+")) {
+                long seed = Long.parseLong(trimmed);
+                return Optional.of(createFallbackData(seed));
+            }
+
+            Optional<MyceliaWorldData> kv = parseKeyValuePayload(trimmed);
+            if (kv.isPresent()) {
+                return kv;
+            }
+
+            logger.warning("Treiber antwortete, aber das Format war nicht erkennbar: " + trimmed);
+            return Optional.empty();
+        } catch (Exception ex) {
+            logger.warning("Treiber-Antwort konnte nicht gelesen werden: " + summarizeException(ex));
+            return Optional.empty();
+        }
+    }
+
+    private Optional<MyceliaWorldData> parseKeyValuePayload(String payload) {
+        String[] parts = payload.split("[,\\s]+");
+        long seed = fallback.nextSeed();
+        String base = defaultBaseBlock;
+        String surface = defaultSurfaceBlock;
+        String ore = defaultOreBlock;
+        double scale = defaultScale;
+        int seaLevel = defaultSeaLevel;
+        boolean found = false;
+
+        for (String part : parts) {
+            if (!part.contains("=") && !part.contains(":")) {
                 continue;
             }
-            try {
-                return Optional.of(Long.parseLong(candidate));
-            } catch (NumberFormatException ignore) {
-                // Falls doch außerhalb von Long: weiter nach oben suchen
+            String[] kv = part.split("[:=]", 2);
+            if (kv.length != 2) {
+                continue;
+            }
+            String key = kv[0].trim();
+            String value = kv[1].trim();
+            switch (key) {
+                case "seed" -> {
+                    seed = Long.parseLong(value);
+                    found = true;
+                }
+                case "baseBlock" -> {
+                    base = value;
+                    found = true;
+                }
+                case "surfaceBlock" -> {
+                    surface = value;
+                    found = true;
+                }
+                case "oreBlock" -> {
+                    ore = value;
+                    found = true;
+                }
+                case "scale" -> {
+                    scale = Double.parseDouble(value);
+                    found = true;
+                }
+                case "seaLevel" -> {
+                    seaLevel = Integer.parseInt(value);
+                    found = true;
+                }
+                default -> {
+                    // ignore
+                }
             }
         }
+
+        if (found) {
+            return Optional.of(new MyceliaWorldData(seed, base, surface, ore, scale, seaLevel));
+        }
         return Optional.empty();
+    }
+
+    private String normalize(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        if (trimmed.length() >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"") && trimmed.indexOf('"', 1) == trimmed.length() - 1) {
+            return trimmed.substring(1, trimmed.length() - 1);
+        }
+        return trimmed;
     }
 
     private List<String> tokenize(String commandLine) {
         List<String> tokens = new ArrayList<>();
         boolean inQuotes = false;
+        char quoteChar = 0;
         StringBuilder current = new StringBuilder();
         for (int i = 0; i < commandLine.length(); i++) {
             char c = commandLine.charAt(i);
-            if (c == '"') {
-                inQuotes = !inQuotes;
-                continue;
+            if (c == '"' || c == '\'') {
+                if (inQuotes && quoteChar == c) {
+                    inQuotes = false;
+                    continue;
+                }
+                if (!inQuotes) {
+                    inQuotes = true;
+                    quoteChar = c;
+                    continue;
+                }
             }
             if (Character.isWhitespace(c) && !inQuotes) {
                 if (current.length() > 0) {

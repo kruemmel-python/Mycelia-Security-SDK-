@@ -1,86 +1,79 @@
 package com.mycelia.mc.generation;
 
+import com.mycelia.mc.driver.MyceliaWorldData;
 import org.bukkit.Material;
 import org.bukkit.World;
-import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.generator.BlockPopulator;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.util.noise.SimplexNoiseGenerator;
 
+import java.util.List;
 import java.util.Random;
 
 public class MyceliaChunkGenerator extends ChunkGenerator {
 
-    private final long seed;
-    private final Material baseBlock;
-    private final Material surfaceBlock;
+    private final MyceliaWorldData data;
+    private final SimplexNoiseGenerator terrainNoise;
+    private final SimplexNoiseGenerator oreNoise;
+    private final Material baseMat;
+    private final Material surfaceMat;
+    private final Material oreMat;
     private final int seaLevel;
-    private final double amplitude;
-    private final double scale;
-    private final SimplexNoiseGenerator noiseGenerator;
 
-    private MyceliaChunkGenerator(long seed, Material baseBlock, Material surfaceBlock, int seaLevel, double amplitude, double scale) {
-        this.seed = seed;
-        this.baseBlock = baseBlock;
-        this.surfaceBlock = surfaceBlock;
-        this.seaLevel = seaLevel;
-        this.amplitude = amplitude;
-        this.scale = scale;
-        this.noiseGenerator = new SimplexNoiseGenerator(seed);
-    }
-
-    public static MyceliaChunkGenerator fromConfig(FileConfiguration config, long seed) {
-        String baseBlockName = config.getString("world.baseBlock", "STONE");
-        String surfaceBlockName = config.getString("world.surfaceBlock", "GRASS_BLOCK");
-        int seaLevel = config.getInt("world.seaLevel", 62);
-        double amplitude = config.getDouble("world.amplitude", 24.0);
-        double scale = config.getDouble("world.scale", 0.015);
-
-        Material baseBlock = Material.matchMaterial(baseBlockName.toUpperCase());
-        if (baseBlock == null) {
-            baseBlock = Material.STONE;
-        }
-        Material surfaceBlock = Material.matchMaterial(surfaceBlockName.toUpperCase());
-        if (surfaceBlock == null) {
-            surfaceBlock = Material.GRASS_BLOCK;
-        }
-
-        return new MyceliaChunkGenerator(seed, baseBlock, surfaceBlock, seaLevel, amplitude, scale);
+    public MyceliaChunkGenerator(MyceliaWorldData data) {
+        this.data = data;
+        this.terrainNoise = new SimplexNoiseGenerator(data.seed());
+        this.oreNoise = new SimplexNoiseGenerator(data.seed() ^ 0xCAFEEBABEL);
+        this.baseMat = materialOrDefault(data.baseBlock(), Material.STONE);
+        this.surfaceMat = materialOrDefault(data.surfaceBlock(), Material.MYCELIUM);
+        this.oreMat = materialOrDefault(data.oreBlock(), Material.AMETHYST_BLOCK);
+        this.seaLevel = data.seaLevel();
     }
 
     @Override
     public ChunkData generateChunkData(World world, Random random, int chunkX, int chunkZ, BiomeGrid biome) {
-        ChunkData chunkData = createChunkData(world);
-        int worldXBase = chunkX << 4;
-        int worldZBase = chunkZ << 4;
+        ChunkData chunk = createChunkData(world);
+        double scale = data.scale();
 
         for (int x = 0; x < 16; x++) {
             for (int z = 0; z < 16; z++) {
-                int worldX = worldXBase + x;
-                int worldZ = worldZBase + z;
-                double noise = noiseGenerator.noise(worldX * scale, worldZ * scale);
-                int height = (int) Math.round((noise * amplitude) + seaLevel);
-                buildColumn(chunkData, x, z, height);
+                boolean surfacePlaced = false;
+                for (int y = 120; y >= world.getMinHeight(); y--) {
+                    double worldX = (chunkX << 4) + x;
+                    double worldZ = (chunkZ << 4) + z;
+
+                    double density = terrainNoise.noise(worldX * scale, y * (scale * 1.5), worldZ * scale);
+                    double finalValue = density + (1.0 - (y / 85.0));
+
+                    if (finalValue > 0.5) {
+                        double oreValue = oreNoise.noise(worldX * scale * 4, y * scale * 4, worldZ * scale * 4);
+                        if (oreValue > 0.8) {
+                            chunk.setBlock(x, y, z, oreMat);
+                        } else if (!surfacePlaced && y > seaLevel) {
+                            chunk.setBlock(x, y, z, surfaceMat);
+                            surfacePlaced = true;
+                        } else {
+                            chunk.setBlock(x, y, z, baseMat);
+                        }
+                    } else if (y < seaLevel) {
+                        chunk.setBlock(x, y, z, Material.WATER);
+                    }
+                }
             }
         }
-
-        return chunkData;
+        return chunk;
     }
 
-    private void buildColumn(ChunkData data, int x, int z, int height) {
-        if (height < 1) {
-            height = 1;
-        }
-        int surfaceY = Math.min(height, data.getMaxHeight() - 1);
-        for (int y = 0; y <= surfaceY; y++) {
-            if (y == surfaceY) {
-                data.setBlock(x, y, z, surfaceBlock);
-            } else {
-                data.setBlock(x, y, z, baseBlock);
-            }
-        }
+    @Override
+    public List<BlockPopulator> getDefaultPopulators(World world) {
+        return List.of(
+                new MyceliaStructurePopulator(),
+                new MyceliaUndergroundPopulator()
+        );
     }
 
-    public long seed() {
-        return seed;
+    private Material materialOrDefault(String name, Material fallback) {
+        Material material = Material.matchMaterial(name);
+        return material != null ? material : fallback;
     }
 }
