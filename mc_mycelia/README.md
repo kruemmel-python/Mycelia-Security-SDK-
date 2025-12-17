@@ -1,6 +1,6 @@
 # mc_mycelia
 
-Ein Paper/Spigot-Plugin, das neue Welten über den Mycelia-Treiber erzeugt. Der Fokus liegt darauf, Mycelia als Seed-Quelle zu nutzen (z.B. über SubQG + Mycel-Pipeline), sodass ein In-Game-Befehl reproduzierbare, deterministische Welten anlegt.
+Ein Paper-Plugin (getestet für Paper 1.21.x), das neue Welten über den Mycelia-Treiber erzeugt. Der Fokus liegt darauf, Mycelia als Seed-Quelle zu nutzen (z.B. über SubQG + Mycel-Pipeline), sodass ein In-Game-Befehl reproduzierbare, deterministische Welten anlegt.
 
 ## Funktionsumfang
 - `/myceliaworld <weltname> [--seed <zahl>]`: erzeugt eine neue Welt mit einem Mycelia-seeded Generator.
@@ -10,7 +10,7 @@ Ein Paper/Spigot-Plugin, das neue Welten über den Mycelia-Treiber erzeugt. Der 
 ## Projektaufbau
 ```
 mc_mycelia/
-├── build.gradle           # Build-Konfiguration (Java 17, Paper/Spigot-API)
+├── build.gradle           # Build-Konfiguration (Java 21, Paper-API 1.21.x)
 ├── settings.gradle        # Setzt den Projektnamen
 ├── src/main/java
 │   └── com/mycelia/mc
@@ -35,7 +35,7 @@ driver:
 Der Prozess muss eine Integer-Zahl (long) in die erste Zeile von STDOUT schreiben. Bei Fehlern oder Timeouts fällt das Plugin automatisch auf einen kryptografisch sicheren Seed zurück und loggt den Grund.
 
 ## Bauen
-Das Projekt ist als eigenständiges Gradle-Modul ausgelegt (Java 17):
+Das Projekt ist als eigenständiges Gradle-Modul ausgelegt (Java 21, passend zu Paper 1.21.x):
 ```bash
 cd mc_mycelia
 ./gradlew build

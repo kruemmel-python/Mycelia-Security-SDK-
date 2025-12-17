@@ -3,14 +3,14 @@
 Diese Anleitung beschreibt Schritt für Schritt, wie du das Paper/Spigot-Plugin **mc_mycelia** baust. Sie richtet sich an Nutzer:innen, die den Mycelia-Treiber (z.B. über SubQG + Mycel) als Seed-Quelle für Weltgenerierung in Minecraft nutzen wollen.
 
 ## Voraussetzungen
-- **Java 17+ JDK** auf dem `PATH`. Das Build zielt auf **Java 17 Bytecode** (damit es zu Paper 1.20 passt). Auch ein JDK 21 funktioniert – dank `--release 17` wird dennoch Java-17-kompatibler Bytecode erzeugt.
+- **Java 21 JDK** auf dem `PATH` (Paper 1.21.x erfordert Java 21). Beispiel: `C:\Program Files\Eclipse Adoptium\jdk-21.x.x-hotspot\bin\java.exe`.
 - **Gradle** lokal installiert **oder** ein vorhandener Gradle-Wrapper (im Repo nicht enthalten, siehe unten, wie du ihn erzeugen kannst).
-- Internetzugang für den ersten Build, damit die Paper-/Spigot-Abhängigkeit aus dem Repository geladen werden kann.
+- Internetzugang für den ersten Build, damit die Paper-Abhängigkeit aus dem Repository geladen werden kann.
 
-> Hinweis: Das Projekt nutzt `paper-api:1.20.6-R0.1-SNAPSHOT` als `compileOnly`-Abhängigkeit. Dadurch bleiben die Paper/Spigot-Klassen zur Kompilezeit verfügbar, werden aber nicht ins JAR gepackt (Bukkit-Server liefert sie zur Laufzeit).
+> Hinweis: Das Projekt nutzt `paper-api:1.21.1-R0.1-SNAPSHOT` als `compileOnly`-Abhängigkeit. Dadurch bleiben die Paper-Klassen zur Kompilezeit verfügbar, werden aber nicht ins JAR gepackt (der Paper-Server liefert sie zur Laufzeit).
 
 ## Projektstruktur (Build-relevant)
-- `mc_mycelia/build.gradle` – definiert Java 17, Paper-Abhängigkeit und JAR-Namen (`mc_mycelia-<version>.jar`).
+- `mc_mycelia/build.gradle` – definiert Java 21, Paper-Abhängigkeit und JAR-Namen (`mc_mycelia-<version>.jar`).
 - `mc_mycelia/settings.gradle` – setzt den Projektnamen.
 - `mc_mycelia/src/main/resources/plugin.yml` – Bukkit-Metadaten (wird ins JAR kopiert).
 - Quellcode unter `mc_mycelia/src/main/java/...`.
@@ -36,14 +36,14 @@ Diese Anleitung beschreibt Schritt für Schritt, wie du das Paper/Spigot-Plugin 
    Dadurch werden `gradlew`, `gradlew.bat` und der Ordner `gradle/` angelegt.
 2. Verwende den Wrapper für den Build (plattformunabhängig):
    ```bash
-   ./gradlew clean build   # macOS/Linux
-   # oder
-   gradlew.bat clean build # Windows
+  ./gradlew clean build   # macOS/Linux
+  # oder
+  gradlew.bat clean build # Windows
    ```
 3. Ergebnis: `mc_mycelia/build/libs/mc_mycelia-0.1.0.jar`.
 
 ## Deployment auf dem Minecraft-Server
-1. Kopiere das JAR nach `plugins/` deines **Paper**- oder **Spigot**-Servers.
+1. Kopiere das JAR nach `plugins/` deines **Paper 1.21.x**-Servers (z.B. `paper-1.21.1-39.jar`).
 2. Starte den Server (oder führe `/reload` auf einer Testinstanz aus).
 3. Passe bei Bedarf die `config.yml` im neu entstandenen Plugin-Ordner an, z.B. um den Mycelia-Treiber/ SubQG-Befehl zu hinterlegen:
    ```yaml
@@ -60,7 +60,7 @@ Diese Anleitung beschreibt Schritt für Schritt, wie du das Paper/Spigot-Plugin 
 
 ## Fehlersuche beim Build
 - **"Could not resolve io.papermc.paper:paper-api"**: Prüfe die Internetverbindung oder ob Maven-Repositories blockiert sind.
-- **Toolchain/Version-Fehler mit JDK 21**: Das Build nutzt jetzt keine Gradle-Toolchain mehr, sondern dein installiertes JDK. Achte nur darauf, dass `java -version` ein JDK ≥ 17 zeigt. Beispiel (JDK 21): `openjdk version "21.x" ...` ist okay, weil der Compiler trotzdem `--release 17` setzt.
+- **Falsche Java-Version**: Paper 1.21.x benötigt zwingend Java 21. Stelle sicher, dass `java -version` 21.x meldet (z.B. Temurin 21). Falls mehrere JDKs installiert sind, setze `JAVA_HOME` auf das Java-21-Verzeichnis oder passe den `PATH` an.
 - **Wrapper fehlt**: Falls `./gradlew` nicht existiert, zuvor `gradle wrapper` ausführen (siehe oben).
 
 ## Nützliche Build-Kommandos

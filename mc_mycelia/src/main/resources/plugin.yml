@@ -2,7 +2,7 @@ name: mc_mycelia
 version: 0.1.0
 main: com.mycelia.mc.MyceliaWorldPlugin
 author: Mycelia Security
-api-version: '1.20'
+api-version: '1.21'
 commands:
   myceliaworld:
     description: Erzeugt eine neue Welt über den Mycelia-Treiber
