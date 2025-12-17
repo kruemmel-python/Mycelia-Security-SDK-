@@ -68,7 +68,7 @@ public class MyceliaDriver {
         }
 
         ProcessBuilder builder = new ProcessBuilder(command);
-        builder.redirectErrorStream(true);
+        builder.redirectErrorStream(false);
         try {
             Process process = builder.start();
             if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
@@ -82,6 +82,11 @@ public class MyceliaDriver {
                     if (!line.isBlank()) {
                         lines.add(line.trim());
                     }
+                }
+
+                String stderr = readAll(process.getErrorStream());
+                if (!stderr.isBlank()) {
+                    logger.warning("Treiber-STDERR: " + stderr.trim());
                 }
 
                 if (lines.isEmpty()) {
@@ -98,6 +103,21 @@ public class MyceliaDriver {
         } catch (IOException ex) {
             logger.warning("Treiber-Aufruf fehlgeschlagen: " + summarizeException(ex));
             return Optional.empty();
+        }
+    }
+
+    private String readAll(java.io.InputStream stream) throws IOException {
+        try (BufferedReader err = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            StringBuilder sb = new StringBuilder();
+            for (String line; (line = err.readLine()) != null; ) {
+                if (!line.isBlank()) {
+                    if (!sb.isEmpty()) {
+                        sb.append(' ');
+                    }
+                    sb.append(line.trim());
+                }
+            }
+            return sb.toString();
         }
     }
 

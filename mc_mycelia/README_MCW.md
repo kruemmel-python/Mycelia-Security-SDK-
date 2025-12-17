@@ -53,6 +53,7 @@ Umfasst den `/myceliaworld`-Befehl, den Treiber-Workflow und die Mycelia-spezifi
 - Timeout oder Parser-Fehler triggern den Fallback, aber das Plugin bleibt funktionsfähig.
 - Pfade mit Leerzeichen im `driver.command` können gequotet werden; das Command wird vor der Tokenisierung normalisiert.
 - Dein Python-Skript kann thematische Paletten ausgeben; das Plugin übernimmt Materialnamen direkt via `Material.matchMaterial`.
+- Achte darauf, dass Fehlermeldungen im Skript nur auf STDERR gehen; STDOUT muss eine einzige JSON-Zeile bleiben (sonst greift der Fallback).
 
 ## Python-Treiber (Beispiel: `mein_subqg_seed_script.py`)
 - Liefert exakt eine JSON-Zeile mit den Keys: `seed`, `baseBlock`, `surfaceBlock`, `oreBlock`, `scale`, `seaLevel`.
