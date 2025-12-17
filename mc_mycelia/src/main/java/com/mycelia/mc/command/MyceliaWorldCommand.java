@@ -12,7 +12,10 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitScheduler;
+
+import java.io.File;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 public class MyceliaWorldCommand implements CommandExecutor {
 
@@ -27,15 +30,92 @@ public class MyceliaWorldCommand implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 0) {
-            sender.sendMessage("§cBitte gebe einen Weltnamen an. Beispiel: /" + label + " myceliawelt [--seed <zahl>]");
+            sender.sendMessage("§e/myceliaworld list");
+            sender.sendMessage("§e/myceliaworld tp <world>");
+            sender.sendMessage("§e/myceliaworld remove <world> [--force]");
             return true;
         }
 
+        switch (args[0].toLowerCase()) {
+            case "list" -> handleList(sender);
+            case "tp" -> handleTeleport(sender, args);
+            case "remove" -> handleRemove(sender, args);
+            default -> handleCreate(sender, args);
+        }
+        return true;
+    }
+
+    private void handleList(CommandSender sender) {
+        String worlds = Bukkit.getWorlds().stream()
+                .map(World::getName)
+                .collect(Collectors.joining(", "));
+
+        sender.sendMessage("§aGeladene Welten:");
+        sender.sendMessage("§7" + worlds);
+    }
+
+    private void handleTeleport(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§cNur Spieler können teleportiert werden.");
+            return;
+        }
+
+        if (args.length < 2) {
+            sender.sendMessage("§cUsage: /myceliaworld tp <world>");
+            return;
+        }
+
+        World world = Bukkit.getWorld(args[1]);
+        if (world == null) {
+            sender.sendMessage("§cWelt nicht geladen oder existiert nicht.");
+            return;
+        }
+
+        player.teleport(world.getSpawnLocation());
+        sender.sendMessage("§aTeleportiert nach §e" + world.getName());
+    }
+
+    private void handleRemove(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.sendMessage("§cUsage: /myceliaworld remove <world> [--force]");
+            return;
+        }
+
+        String worldName = args[1];
+        boolean force = args.length >= 3 && args[2].equalsIgnoreCase("--force");
+
+        World world = Bukkit.getWorld(worldName);
+        if (world == null) {
+            sender.sendMessage("§cWelt ist nicht geladen.");
+            return;
+        }
+
+        if (!force && world.getPlayers().size() > 0) {
+            sender.sendMessage("§cSpieler sind noch in der Welt. Nutze --force.");
+            return;
+        }
+
+        world.getPlayers().forEach(p -> p.teleport(Bukkit.getWorlds().get(0).getSpawnLocation()));
+
+        boolean unloaded = Bukkit.unloadWorld(world, false);
+        if (!unloaded) {
+            sender.sendMessage("§cWelt konnte nicht entladen werden.");
+            return;
+        }
+
+        File folder = world.getWorldFolder();
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            deleteDirectory(folder);
+            Bukkit.getScheduler().runTask(plugin, () -> sender.sendMessage("§aWelt §e" + worldName + " §awurde gelöscht."));
+        });
+    }
+
+    private void handleCreate(CommandSender sender, String[] args) {
         String worldName = args[0];
         Optional<Long> seed = parseSeed(args);
         if (seed.isPresent()) {
             createWorldSync(sender, worldName, seed.get(), true);
-            return true;
+            return;
         }
 
         sender.sendMessage("§7Hole Seed asynchron vom Mycelia-Treiber...");
@@ -50,7 +130,6 @@ public class MyceliaWorldCommand implements CommandExecutor {
                     BukkitScheduler scheduler = plugin.getServer().getScheduler();
                     scheduler.runTask(plugin, () -> createWorldSync(sender, worldName, seedForWorld, error != null));
                 });
-        return true;
     }
 
     private void createWorldSync(CommandSender sender, String worldName, long resolvedSeed, boolean usedFallback) {
@@ -86,5 +165,17 @@ public class MyceliaWorldCommand implements CommandExecutor {
             }
         }
         return Optional.empty();
+    }
+
+    private void deleteDirectory(File file) {
+        if (file.isDirectory()) {
+            File[] files = file.listFiles();
+            if (files != null) {
+                for (File f : files) {
+                    deleteDirectory(f);
+                }
+            }
+        }
+        file.delete();
     }
 }
