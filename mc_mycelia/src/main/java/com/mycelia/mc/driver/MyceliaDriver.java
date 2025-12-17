@@ -30,6 +30,7 @@ public class MyceliaDriver {
     private final String defaultSurfaceBlock;
     private final String defaultOreBlock;
     private final double defaultScale;
+    private final int defaultSeaLevel;
 
     public MyceliaDriver(Plugin plugin, FileConfiguration config) {
         this.logger = plugin.getLogger();
@@ -41,6 +42,7 @@ public class MyceliaDriver {
         this.defaultSurfaceBlock = config.getString("world.surfaceBlock", "MYCELIUM");
         this.defaultOreBlock = config.getString("world.oreBlock", "AMETHYST_BLOCK");
         this.defaultScale = config.getDouble("world.scale", 0.025D);
+        this.defaultSeaLevel = config.getInt("world.seaLevel", 40);
     }
 
     public CompletableFuture<MyceliaWorldData> resolveWorldDataAsync(Optional<Long> explicitSeed) {
@@ -105,7 +107,8 @@ public class MyceliaDriver {
         String surface = extract(json, "surfaceBlock", defaultSurfaceBlock);
         String ore = extract(json, "oreBlock", defaultOreBlock);
         double scale = Double.parseDouble(extract(json, "scale", String.valueOf(defaultScale)));
-        return new MyceliaWorldData(seed, base, surface, ore, scale);
+        int seaLevel = Integer.parseInt(extract(json, "seaLevel", String.valueOf(defaultSeaLevel)));
+        return new MyceliaWorldData(seed, base, surface, ore, scale, seaLevel);
     }
 
     private String extract(String json, String key, String def) {
@@ -136,7 +139,7 @@ public class MyceliaDriver {
     }
 
     public MyceliaWorldData createFallbackData(long seed) {
-        return new MyceliaWorldData(seed, defaultBaseBlock, defaultSurfaceBlock, defaultOreBlock, defaultScale);
+        return new MyceliaWorldData(seed, defaultBaseBlock, defaultSurfaceBlock, defaultOreBlock, defaultScale, defaultSeaLevel);
     }
 
     private Optional<MyceliaWorldData> parsePayload(String payload) {
@@ -175,6 +178,7 @@ public class MyceliaDriver {
         String surface = defaultSurfaceBlock;
         String ore = defaultOreBlock;
         double scale = defaultScale;
+        int seaLevel = defaultSeaLevel;
         boolean found = false;
 
         for (String part : parts) {
@@ -208,6 +212,10 @@ public class MyceliaDriver {
                     scale = Double.parseDouble(value);
                     found = true;
                 }
+                case "seaLevel" -> {
+                    seaLevel = Integer.parseInt(value);
+                    found = true;
+                }
                 default -> {
                     // ignore
                 }
@@ -215,7 +223,7 @@ public class MyceliaDriver {
         }
 
         if (found) {
-            return Optional.of(new MyceliaWorldData(seed, base, surface, ore, scale));
+            return Optional.of(new MyceliaWorldData(seed, base, surface, ore, scale, seaLevel));
         }
         return Optional.empty();
     }

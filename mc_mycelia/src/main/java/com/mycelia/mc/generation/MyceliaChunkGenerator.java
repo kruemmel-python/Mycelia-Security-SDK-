@@ -15,7 +15,7 @@ public class MyceliaChunkGenerator extends ChunkGenerator {
     private final Material baseMat;
     private final Material surfaceMat;
     private final Material oreMat;
-    private static final int SEA_LEVEL = 40;
+    private final int seaLevel;
 
     public MyceliaChunkGenerator(MyceliaWorldData data) {
         this.data = data;
@@ -24,6 +24,7 @@ public class MyceliaChunkGenerator extends ChunkGenerator {
         this.baseMat = materialOrDefault(data.baseBlock(), Material.STONE);
         this.surfaceMat = materialOrDefault(data.surfaceBlock(), Material.MYCELIUM);
         this.oreMat = materialOrDefault(data.oreBlock(), Material.AMETHYST_BLOCK);
+        this.seaLevel = data.seaLevel();
     }
 
     @Override
@@ -45,19 +46,24 @@ public class MyceliaChunkGenerator extends ChunkGenerator {
                         double oreValue = oreNoise.noise(worldX * scale * 4, y * scale * 4, worldZ * scale * 4);
                         if (oreValue > 0.8) {
                             chunk.setBlock(x, y, z, oreMat);
-                        } else if (!surfacePlaced && y > SEA_LEVEL) {
+                        } else if (!surfacePlaced && y > seaLevel) {
                             chunk.setBlock(x, y, z, surfaceMat);
                             surfacePlaced = true;
                         } else {
                             chunk.setBlock(x, y, z, baseMat);
                         }
-                    } else if (y < SEA_LEVEL) {
+                    } else if (y < seaLevel) {
                         chunk.setBlock(x, y, z, Material.WATER);
                     }
                 }
             }
         }
         return chunk;
+    }
+
+    @Override
+    public java.util.List<org.bukkit.generator.BlockPopulator> getDefaultPopulators(World world) {
+        return java.util.List.of(new MyceliaStructurePopulator());
     }
 
     private Material materialOrDefault(String name, Material fallback) {

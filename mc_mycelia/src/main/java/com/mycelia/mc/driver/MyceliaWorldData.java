@@ -5,6 +5,7 @@ public record MyceliaWorldData(
         String baseBlock,
         String surfaceBlock,
         String oreBlock,
-        double scale
+        double scale,
+        int seaLevel
 ) {
 }
