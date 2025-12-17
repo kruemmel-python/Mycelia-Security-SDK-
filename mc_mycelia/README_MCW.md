@@ -53,3 +53,9 @@ Umfasst den `/myceliaworld`-Befehl, den Treiber-Workflow und die Mycelia-spezifi
 - Timeout oder Parser-Fehler triggern den Fallback, aber das Plugin bleibt funktionsfähig.
 - Pfade mit Leerzeichen im `driver.command` können gequotet werden; das Command wird vor der Tokenisierung normalisiert.
 - Dein Python-Skript kann thematische Paletten ausgeben; das Plugin übernimmt Materialnamen direkt via `Material.matchMaterial`.
+
+## Python-Treiber (Beispiel: `mein_subqg_seed_script.py`)
+- Liefert exakt eine JSON-Zeile mit den Keys: `seed`, `baseBlock`, `surfaceBlock`, `oreBlock`, `scale`, `seaLevel`.
+- Wählt aus vordefinierten Paletten (z. B. Myzel-Invasion, Eis-Ödland, Vulkanisch, Verdorbener Wald, Überwuchert) anhand des Seeds passende Blöcke, um konsistente Themenwelten zu erzeugen.
+- Beispiel-Aufruf (config `driver.command`): `python D:/mc-test/scripts/mein_subqg_seed_script.py`
+- Loggt optional das gewählte Thema auf STDERR; der Treiber liest nur die letzte STDOUT-Zeile als Payload.
