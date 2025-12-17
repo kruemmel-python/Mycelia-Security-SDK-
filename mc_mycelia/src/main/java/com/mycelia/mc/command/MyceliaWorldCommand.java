@@ -43,17 +43,17 @@ public class MyceliaWorldCommand implements CommandExecutor {
                 .whenComplete((resolvedSeed, error) -> {
                     long finalSeed = resolvedSeed;
                     if (error != null) {
-                        plugin.getLogger().warning("[mc_mycelia] Asynchroner Seed-Aufruf fehlgeschlagen: " + error.getMessage());
+                        plugin.getLogger().warning("Asynchroner Seed-Aufruf fehlgeschlagen: " + error.getMessage());
                         finalSeed = driver.nextSecureSeed();
                     }
                     long seedForWorld = finalSeed;
                     BukkitScheduler scheduler = plugin.getServer().getScheduler();
-                    scheduler.runTask(plugin, () -> createWorldSync(sender, worldName, seedForWorld));
+                    scheduler.runTask(plugin, () -> createWorldSync(sender, worldName, seedForWorld, error != null));
                 });
         return true;
     }
 
-    private void createWorldSync(CommandSender sender, String worldName, long resolvedSeed) {
+    private void createWorldSync(CommandSender sender, String worldName, long resolvedSeed, boolean usedFallback) {
         FileConfiguration config = plugin.getConfig();
         MyceliaChunkGenerator generator = MyceliaChunkGenerator.fromConfig(config, resolvedSeed);
 
@@ -63,6 +63,9 @@ public class MyceliaWorldCommand implements CommandExecutor {
 
         World world = Bukkit.createWorld(creator);
         if (world != null) {
+            if (usedFallback) {
+                sender.sendMessage("§eTreiber lieferte keinen Seed, nutze sicheren Fallback-Seed.");
+            }
             sender.sendMessage("§aNeue Mycelia-Welt erzeugt: " + world.getName() + " (Seed: " + resolvedSeed + ")");
             if (sender instanceof Player player && player.isOnline()) {
                 player.teleport(world.getSpawnLocation());

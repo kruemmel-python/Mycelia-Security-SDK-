@@ -45,7 +45,7 @@ public class MyceliaDriver {
         return CompletableFuture.supplyAsync(() -> requestSeedFromDriver()
                 .orElseGet(() -> {
                     long seed = fallback.nextSeed();
-                    logger.warning("[mc_mycelia] Fallback auf sicheren Seed, Treiber nicht erreichbar.");
+                    logger.warning("Fallback auf sicheren Seed, Treiber nicht erreichbar.");
                     return seed;
                 }));
     }
@@ -70,30 +70,30 @@ public class MyceliaDriver {
             Process process = builder.start();
             if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
                 process.destroyForcibly();
-                logger.warning("[mc_mycelia] Mycelia-Treiber überschritt Timeout von " + timeout.toSeconds() + "s.");
+                logger.warning("Mycelia-Treiber überschritt Timeout von " + timeout.toSeconds() + "s.");
                 return Optional.empty();
             }
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
                 String line = reader.readLine();
                 if (line == null || line.isBlank()) {
-                    logger.warning("[mc_mycelia] Treiber lieferte keinen Seed.");
+                    logger.warning("Treiber lieferte keinen Seed.");
                     return Optional.empty();
                 }
                 try {
                     long seed = Long.parseLong(line.trim());
-                    logger.info("[mc_mycelia] Seed aus Mycelia-Treiber empfangen: " + seed);
+                    logger.info("Seed aus Mycelia-Treiber empfangen: " + seed);
                     return Optional.of(seed);
                 } catch (NumberFormatException nfe) {
-                    logger.warning("[mc_mycelia] Ungültiger Seed aus Treiber: '" + line + "'.");
+                    logger.warning("Ungültiger Seed aus Treiber: '" + line + "'.");
                     return Optional.empty();
                 }
             }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
-            logger.warning("[mc_mycelia] Treiber-Aufruf unterbrochen: " + summarizeException(ex));
+            logger.warning("Treiber-Aufruf unterbrochen: " + summarizeException(ex));
             return Optional.empty();
         } catch (IOException ex) {
-            logger.warning("[mc_mycelia] Treiber-Aufruf fehlgeschlagen: " + summarizeException(ex));
+            logger.warning("Treiber-Aufruf fehlgeschlagen: " + summarizeException(ex));
             return Optional.empty();
         }
     }
