@@ -11,9 +11,9 @@ Umfasst den `/myceliaworld`-Befehl, den Treiber-Workflow und die Mycelia-spezifi
 
 ## Treiber & Fallback
 - Konfiguration: `mc_mycelia/src/main/resources/config.yml`
-  - `driver.command`: Prozess, der Weltdaten ausgibt (s. Format unten). Beispiel (Windows): `"python" D:/mc-test/scripts/mein_subqg_seed_script.py` oder `"C:\\Path\\python.exe" D:/mc-test/paper/mein_subqg_seed_script.py`.
+  - `driver.command`: Prozess, der Weltdaten ausgibt (s. Format unten). Beispiel (Windows): `"C:\\Users\\ralfk\\AppData\\Local\\Programs\\Python\\Python312\\python.exe D:/mc-test/paper/mein_subqg_seed_script.py"`.
   - `driver.timeoutSeconds`: Wartezeit pro Aufruf.
-  - `world.*`: Defaults, falls Treiber nicht liefert (baseBlock, surfaceBlock, oreBlock, seaLevel, scale).
+  - `world.*`: Fallback-Defaults, falls der Treiber keine gültigen Daten liefert (baseBlock, surfaceBlock, oreBlock, seaLevel, scale).
 - Aufruf: Der Treiber wird asynchron gestartet. Ausgabe wird robust geparst (JSON, einfacher Seed, oder Key/Value-Liste). Bei Fehlern/Timeout greift ein kryptografisch sicherer Fallback.
 - Unterstützte Ausgabeformate (eine Zeile):
   - JSON: `{ "seed":123, "baseBlock":"STONE", "surfaceBlock":"MYCELIUM", "oreBlock":"DIAMOND_ORE", "scale":0.03, "seaLevel":45 }`

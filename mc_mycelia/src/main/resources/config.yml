@@ -1,10 +1,10 @@
 driver:
-  # Prozess, der einen Seed (long) über STDOUT zurückliefert. Passe den Pfad auf deinen
-  # SubQG/Mycel-Treiber an. Leer lassen, um direkt auf kryptografisch sichere Seeds
-  # zu fallen.
-  command: ""
+  # Prozess, der eine JSON-Zeile mit Weltdaten ausgibt (s. README_MCW.md).
+  # Beispiel: Dein Python-Skript mit Paletten-Logik:
+  #  "C:\\Users\\ralfk\\AppData\\Local\\Programs\\Python\\Python312\\python.exe D:/mc-test/paper/mein_subqg_seed_script.py"
+  command: "C:\\Users\\ralfk\\AppData\\Local\\Programs\\Python\\Python312\\python.exe D:/mc-test/paper/mein_subqg_seed_script.py"
   # Für den ersten Aufruf (Kernel-Warmup) kann ein höheres Timeout nötig sein.
-  timeoutSeconds: 60
+  timeoutSeconds: 90
 
 world:
   # Empfohlene Blöcke für Mycelia-Feeling
