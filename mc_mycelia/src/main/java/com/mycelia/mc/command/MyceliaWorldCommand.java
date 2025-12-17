@@ -2,6 +2,7 @@ package com.mycelia.mc.command;
 
 import com.mycelia.mc.MyceliaWorldPlugin;
 import com.mycelia.mc.driver.MyceliaDriver;
+import com.mycelia.mc.driver.MyceliaWorldData;
 import com.mycelia.mc.generation.MyceliaChunkGenerator;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
@@ -9,10 +10,13 @@ import org.bukkit.WorldCreator;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
-import org.bukkit.configuration.file.FileConfiguration;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitScheduler;
+
+import java.io.File;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 public class MyceliaWorldCommand implements CommandExecutor {
 
@@ -27,52 +31,106 @@ public class MyceliaWorldCommand implements CommandExecutor {
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (args.length == 0) {
-            sender.sendMessage("§cBitte gebe einen Weltnamen an. Beispiel: /" + label + " myceliawelt [--seed <zahl>]");
+            sender.sendMessage("§e/myceliaworld list");
+            sender.sendMessage("§e/myceliaworld tp <world>");
+            sender.sendMessage("§e/myceliaworld remove <world> [--force]");
+            sender.sendMessage("§e/myceliaworld info");
             return true;
         }
 
-        String worldName = args[0];
-        Optional<Long> seed = parseSeed(args);
-        if (seed.isPresent()) {
-            createWorldSync(sender, worldName, seed.get(), true);
-            return true;
+        switch (args[0].toLowerCase()) {
+            case "list" -> handleList(sender);
+            case "tp" -> handleTeleport(sender, args);
+            case "remove" -> handleRemove(sender, args);
+            case "info" -> handleInfo(sender);
+            default -> handleCreate(sender, args);
         }
-
-        sender.sendMessage("§7Hole Seed asynchron vom Mycelia-Treiber...");
-        driver.resolveSeedAsync(Optional.empty())
-                .whenComplete((resolvedSeed, error) -> {
-                    long finalSeed = resolvedSeed;
-                    if (error != null) {
-                        plugin.getLogger().warning("Asynchroner Seed-Aufruf fehlgeschlagen: " + error.getMessage());
-                        finalSeed = driver.nextSecureSeed();
-                    }
-                    long seedForWorld = finalSeed;
-                    BukkitScheduler scheduler = plugin.getServer().getScheduler();
-                    scheduler.runTask(plugin, () -> createWorldSync(sender, worldName, seedForWorld, error != null));
-                });
         return true;
     }
 
-    private void createWorldSync(CommandSender sender, String worldName, long resolvedSeed, boolean usedFallback) {
-        FileConfiguration config = plugin.getConfig();
-        MyceliaChunkGenerator generator = MyceliaChunkGenerator.fromConfig(config, resolvedSeed);
+    private void handleList(CommandSender sender) {
+        String worlds = Bukkit.getWorlds().stream()
+                .map(World::getName)
+                .collect(Collectors.joining(", "));
 
-        WorldCreator creator = new WorldCreator(worldName);
-        creator.generator(generator);
-        creator.seed(resolvedSeed);
+        sender.sendMessage("§aGeladene Welten:");
+        sender.sendMessage("§7" + worlds);
+    }
 
-        World world = Bukkit.createWorld(creator);
-        if (world != null) {
-            if (usedFallback) {
-                sender.sendMessage("§eTreiber lieferte keinen Seed, nutze sicheren Fallback-Seed.");
-            }
-            sender.sendMessage("§aNeue Mycelia-Welt erzeugt: " + world.getName() + " (Seed: " + resolvedSeed + ")");
-            if (sender instanceof Player player && player.isOnline()) {
-                player.teleport(world.getSpawnLocation());
-            }
-        } else {
-            sender.sendMessage("§cWelt konnte nicht erzeugt werden. Siehe Server-Logs für Details.");
+    private void handleTeleport(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§cNur Spieler können teleportiert werden.");
+            return;
         }
+
+        if (args.length < 2) {
+            sender.sendMessage("§cUsage: /myceliaworld tp <world>");
+            return;
+        }
+
+        World world = Bukkit.getWorld(args[1]);
+        if (world == null) {
+            sender.sendMessage("§cWelt nicht geladen oder existiert nicht.");
+            return;
+        }
+
+        player.teleport(world.getSpawnLocation());
+        sender.sendMessage("§aTeleportiert nach §e" + world.getName());
+    }
+
+    private void handleRemove(CommandSender sender, String[] args) {
+        if (args.length < 2) {
+            sender.sendMessage("§cUsage: /myceliaworld remove <world> [--force]");
+            return;
+        }
+
+        String worldName = args[1];
+        boolean force = args.length >= 3 && args[2].equalsIgnoreCase("--force");
+
+        World world = Bukkit.getWorld(worldName);
+        if (world == null) {
+            sender.sendMessage("§cWelt ist nicht geladen.");
+            return;
+        }
+
+        if (!force && world.getPlayers().size() > 0) {
+            sender.sendMessage("§cSpieler sind noch in der Welt. Nutze --force.");
+            return;
+        }
+
+        world.getPlayers().forEach(p -> p.teleport(Bukkit.getWorlds().get(0).getSpawnLocation()));
+
+        boolean unloaded = Bukkit.unloadWorld(world, false);
+        if (!unloaded) {
+            sender.sendMessage("§cWelt konnte nicht entladen werden.");
+            return;
+        }
+
+        File folder = world.getWorldFolder();
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            deleteDirectory(folder);
+            Bukkit.getScheduler().runTask(plugin, () -> sender.sendMessage("§aWelt §e" + worldName + " §awurde gelöscht."));
+        });
+    }
+
+    private void handleCreate(CommandSender sender, String[] args) {
+        String worldName = args[0];
+        Optional<Long> seed = parseSeed(args);
+        sender.sendMessage("§7Hole Welt-Daten asynchron vom Mycelia-Treiber...");
+        driver.resolveWorldDataAsync(seed)
+                .whenComplete((data, error) -> {
+                    MyceliaWorldData worldData = data;
+                    boolean usedFallback = false;
+                    if (error != null || data == null) {
+                        plugin.getLogger().warning("Asynchroner Treiber-Aufruf fehlgeschlagen: " + (error != null ? error.getMessage() : "unbekannt"));
+                        worldData = driver.createFallbackData(seed.orElseGet(() -> System.nanoTime()));
+                        usedFallback = true;
+                    }
+                    BukkitScheduler scheduler = plugin.getServer().getScheduler();
+                    MyceliaWorldData finalWorldData = worldData;
+                    boolean finalUsedFallback = usedFallback;
+                    scheduler.runTask(plugin, () -> createWorldSync(sender, worldName, finalWorldData, finalUsedFallback));
+                });
     }
 
     private Optional<Long> parseSeed(String[] args) {
@@ -86,5 +144,64 @@ public class MyceliaWorldCommand implements CommandExecutor {
             }
         }
         return Optional.empty();
+    }
+
+    private void createWorldSync(CommandSender sender, String worldName, MyceliaWorldData data, boolean usedFallback) {
+        MyceliaChunkGenerator generator = new MyceliaChunkGenerator(data);
+
+        WorldCreator creator = new WorldCreator(worldName);
+        creator.generator(generator);
+        creator.seed(data.seed());
+
+        World world = Bukkit.createWorld(creator);
+        if (world != null) {
+            plugin.saveWorldMeta(worldName, data);
+            if (usedFallback) {
+                sender.sendMessage("§eTreiber lieferte keine Daten, nutze sichere Fallback-Daten.");
+            }
+            sender.sendMessage("§aNeue Mycelia-Welt erzeugt: " + world.getName() + " (Seed: " + data.seed() + ")");
+            if (sender instanceof Player player && player.isOnline()) {
+                player.teleport(world.getSpawnLocation());
+            }
+        } else {
+            sender.sendMessage("§cWelt konnte nicht erzeugt werden. Siehe Server-Logs für Details.");
+        }
+    }
+
+    private void deleteDirectory(File file) {
+        if (file.isDirectory()) {
+            File[] files = file.listFiles();
+            if (files != null) {
+                for (File f : files) {
+                    deleteDirectory(f);
+                }
+            }
+        }
+        file.delete();
+    }
+
+    private void handleInfo(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§cNur Spieler können diesen Befehl nutzen.");
+            return;
+        }
+
+        String worldName = player.getWorld().getName();
+        ConfigurationSection meta = plugin.getWorldMeta(worldName);
+
+        if (meta == null) {
+            sender.sendMessage("§cKeine Mycelia-Metadaten für diese Welt gefunden.");
+            return;
+        }
+
+        sender.sendMessage("§8§m      §r §d§lMycelia Welt-Info §8§m      ");
+        sender.sendMessage("§7Welt: §f" + worldName);
+        sender.sendMessage("§7Seed: §e" + meta.getLong("seed"));
+        sender.sendMessage("§7Oberfläche: §a" + meta.getString("surfaceBlock"));
+        sender.sendMessage("§7Basis: §7" + meta.getString("baseBlock"));
+        sender.sendMessage("§7Erz-Adern: §d" + meta.getString("oreBlock"));
+        sender.sendMessage("§7Skalierung: §b" + meta.getDouble("scale"));
+        sender.sendMessage("§7Meeresspiegel: §3" + meta.getInt("seaLevel"));
+        sender.sendMessage("§8§m                             ");
     }
 }
