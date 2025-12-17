@@ -7,10 +7,10 @@ driver:
   timeoutSeconds: 60
 
 world:
-  # Basis-Block-ID (z.B. STONE, DEEPSLATE). Wird für die Grundplatte verwendet,
-  # falls keine eigenen Höhenkarten aus dem Treiber kommen.
-  baseBlock: STONE
-  surfaceBlock: GRASS_BLOCK
-  seaLevel: 62
-  amplitude: 24
-  scale: 0.015
+  # Empfohlene Blöcke für Mycelia-Feeling
+  baseBlock: DEEPSLATE
+  surfaceBlock: MYCELIUM
+  seaLevel: 45
+  # Ein kleinerer Wert macht die Berge massiver, 
+  # ein größerer (0.05+) macht die Welt zerklüfteter.
+  scale: 0.025
