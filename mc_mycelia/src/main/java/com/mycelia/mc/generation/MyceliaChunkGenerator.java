@@ -3,8 +3,11 @@ package com.mycelia.mc.generation;
 import com.mycelia.mc.driver.MyceliaWorldData;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.generator.BlockPopulator;
 import org.bukkit.generator.ChunkGenerator;
 import org.bukkit.util.noise.SimplexNoiseGenerator;
+
+import java.util.List;
 import java.util.Random;
 
 public class MyceliaChunkGenerator extends ChunkGenerator {
@@ -62,8 +65,11 @@ public class MyceliaChunkGenerator extends ChunkGenerator {
     }
 
     @Override
-    public java.util.List<org.bukkit.generator.BlockPopulator> getDefaultPopulators(World world) {
-        return java.util.List.of(new MyceliaStructurePopulator());
+    public List<BlockPopulator> getDefaultPopulators(World world) {
+        return List.of(
+                new MyceliaStructurePopulator(),
+                new MyceliaUndergroundPopulator()
+        );
     }
 
     private Material materialOrDefault(String name, Material fallback) {
