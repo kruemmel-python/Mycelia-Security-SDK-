@@ -5,8 +5,14 @@ plugins {
 group = 'com.mycelia.mc'
 version = '0.1.0'
 
+java {
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
+}
+
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
+    // Erzwingt Bytecode für Java 17, auch wenn z.B. JDK 21 verwendet wird
     options.release = 17
 }
 
@@ -30,10 +36,4 @@ dependencies {
     compileOnly 'io.papermc.paper:paper-api:1.20.6-R0.1-SNAPSHOT'
     // Für Spigot-Kompatibilität kann alternativ verwendet werden:
     // compileOnly 'org.spigotmc:spigot-api:1.20.6-R0.1-SNAPSHOT'
-}
-
-java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
-    }
 }

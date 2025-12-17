@@ -3,7 +3,7 @@
 Diese Anleitung beschreibt Schritt für Schritt, wie du das Paper/Spigot-Plugin **mc_mycelia** baust. Sie richtet sich an Nutzer:innen, die den Mycelia-Treiber (z.B. über SubQG + Mycel) als Seed-Quelle für Weltgenerierung in Minecraft nutzen wollen.
 
 ## Voraussetzungen
-- **Java 17 JDK** installiert und auf dem `PATH` (z.B. `java -version` zeigt 17.x).
+- **Java 17+ JDK** auf dem `PATH`. Das Build zielt auf **Java 17 Bytecode** (damit es zu Paper 1.20 passt). Auch ein JDK 21 funktioniert – dank `--release 17` wird dennoch Java-17-kompatibler Bytecode erzeugt.
 - **Gradle** lokal installiert **oder** ein vorhandener Gradle-Wrapper (im Repo nicht enthalten, siehe unten, wie du ihn erzeugen kannst).
 - Internetzugang für den ersten Build, damit die Paper-/Spigot-Abhängigkeit aus dem Repository geladen werden kann.
 
@@ -22,10 +22,10 @@ Diese Anleitung beschreibt Schritt für Schritt, wie du das Paper/Spigot-Plugin 
    ```
 2. Baue das Plugin:
    ```bash
-   gradle clean build
-   ```
-   - Der Build lädt beim ersten Lauf die Paper-API aus `https://repo.papermc.io/repository/maven-public/`.
-   - Das fertige JAR findest du unter `mc_mycelia/build/libs/mc_mycelia-0.1.0.jar`.
+  gradle clean build
+  ```
+  - Der Build lädt beim ersten Lauf die Paper-API aus `https://repo.papermc.io/repository/maven-public/`.
+  - Das fertige JAR findest du unter `mc_mycelia/build/libs/mc_mycelia-0.1.0.jar`.
 
 ## Build mit lokal erzeugtem Gradle-Wrapper (falls Gradle nicht installiert ist)
 1. Wechsle ins Modulverzeichnis und erzeuge den Wrapper:
@@ -60,7 +60,7 @@ Diese Anleitung beschreibt Schritt für Schritt, wie du das Paper/Spigot-Plugin 
 
 ## Fehlersuche beim Build
 - **"Could not resolve io.papermc.paper:paper-api"**: Prüfe die Internetverbindung oder ob Maven-Repositories blockiert sind.
-- **Java-Version stimmt nicht**: Sicherstellen, dass `java -version` 17 meldet; ansonsten JDK 17 installieren oder per `JAVA_HOME`/Gradle-Toolchain setzen.
+- **Toolchain/Version-Fehler mit JDK 21**: Das Build nutzt jetzt keine Gradle-Toolchain mehr, sondern dein installiertes JDK. Achte nur darauf, dass `java -version` ein JDK ≥ 17 zeigt. Beispiel (JDK 21): `openjdk version "21.x" ...` ist okay, weil der Compiler trotzdem `--release 17` setzt.
 - **Wrapper fehlt**: Falls `./gradlew` nicht existiert, zuvor `gradle wrapper` ausführen (siehe oben).
 
 ## Nützliche Build-Kommandos
