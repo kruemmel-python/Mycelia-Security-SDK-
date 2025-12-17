@@ -33,7 +33,7 @@ public class MyceliaDriver {
 
     public MyceliaDriver(Plugin plugin, FileConfiguration config) {
         this.logger = plugin.getLogger();
-        this.driverCommand = config.getString("driver.command", "");
+        this.driverCommand = normalize(config.getString("driver.command", ""));
         int timeoutSeconds = config.getInt("driver.timeoutSeconds", 5);
         this.timeout = Duration.ofSeconds(Math.max(timeoutSeconds, 1));
         this.fallback = new SecureSeedFallback();
@@ -49,7 +49,7 @@ public class MyceliaDriver {
                 return createFallbackData(explicitSeed.get());
             }
             return requestWorldDataFromDriver().orElseGet(() -> {
-                logger.warning("Fallback auf sichere Welt-Daten, Treiber nicht erreichbar.");
+                logger.warning("Fallback auf sichere Welt-Daten, Treiber nicht erreichbar oder Antwort unbrauchbar.");
                 return createFallbackData(fallback.nextSeed());
             });
         });
@@ -87,10 +87,7 @@ public class MyceliaDriver {
                 }
 
                 String payload = lines.get(lines.size() - 1);
-                if (payload.contains("{")) {
-                    return Optional.of(parseJson(payload));
-                }
-                return Optional.empty();
+                return parsePayload(payload);
             }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
@@ -142,15 +139,115 @@ public class MyceliaDriver {
         return new MyceliaWorldData(seed, defaultBaseBlock, defaultSurfaceBlock, defaultOreBlock, defaultScale);
     }
 
+    private Optional<MyceliaWorldData> parsePayload(String payload) {
+        String trimmed = payload.trim();
+        if (trimmed.isEmpty()) {
+            return Optional.empty();
+        }
+
+        try {
+            if (trimmed.contains("{")) {
+                return Optional.of(parseJson(trimmed));
+            }
+
+            if (trimmed.matches("-?\\d+")) {
+                long seed = Long.parseLong(trimmed);
+                return Optional.of(createFallbackData(seed));
+            }
+
+            Optional<MyceliaWorldData> kv = parseKeyValuePayload(trimmed);
+            if (kv.isPresent()) {
+                return kv;
+            }
+
+            logger.warning("Treiber antwortete, aber das Format war nicht erkennbar: " + trimmed);
+            return Optional.empty();
+        } catch (Exception ex) {
+            logger.warning("Treiber-Antwort konnte nicht gelesen werden: " + summarizeException(ex));
+            return Optional.empty();
+        }
+    }
+
+    private Optional<MyceliaWorldData> parseKeyValuePayload(String payload) {
+        String[] parts = payload.split("[,\\s]+");
+        long seed = fallback.nextSeed();
+        String base = defaultBaseBlock;
+        String surface = defaultSurfaceBlock;
+        String ore = defaultOreBlock;
+        double scale = defaultScale;
+        boolean found = false;
+
+        for (String part : parts) {
+            if (!part.contains("=") && !part.contains(":")) {
+                continue;
+            }
+            String[] kv = part.split("[:=]", 2);
+            if (kv.length != 2) {
+                continue;
+            }
+            String key = kv[0].trim();
+            String value = kv[1].trim();
+            switch (key) {
+                case "seed" -> {
+                    seed = Long.parseLong(value);
+                    found = true;
+                }
+                case "baseBlock" -> {
+                    base = value;
+                    found = true;
+                }
+                case "surfaceBlock" -> {
+                    surface = value;
+                    found = true;
+                }
+                case "oreBlock" -> {
+                    ore = value;
+                    found = true;
+                }
+                case "scale" -> {
+                    scale = Double.parseDouble(value);
+                    found = true;
+                }
+                default -> {
+                    // ignore
+                }
+            }
+        }
+
+        if (found) {
+            return Optional.of(new MyceliaWorldData(seed, base, surface, ore, scale));
+        }
+        return Optional.empty();
+    }
+
+    private String normalize(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        if (trimmed.length() >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"") && trimmed.indexOf('"', 1) == trimmed.length() - 1) {
+            return trimmed.substring(1, trimmed.length() - 1);
+        }
+        return trimmed;
+    }
+
     private List<String> tokenize(String commandLine) {
         List<String> tokens = new ArrayList<>();
         boolean inQuotes = false;
+        char quoteChar = 0;
         StringBuilder current = new StringBuilder();
         for (int i = 0; i < commandLine.length(); i++) {
             char c = commandLine.charAt(i);
-            if (c == '"') {
-                inQuotes = !inQuotes;
-                continue;
+            if (c == '"' || c == '\'') {
+                if (inQuotes && quoteChar == c) {
+                    inQuotes = false;
+                    continue;
+                }
+                if (!inQuotes) {
+                    inQuotes = true;
+                    quoteChar = c;
+                    continue;
+                }
             }
             if (Character.isWhitespace(c) && !inQuotes) {
                 if (current.length() > 0) {
