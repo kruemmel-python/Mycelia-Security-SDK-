@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 import java.util.StringJoiner;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
@@ -35,17 +36,22 @@ public class MyceliaDriver {
     }
 
     /**
-     * Liefert einen Seed. Wenn eine Zahl mitgegeben wird, hat diese Vorrang.
+     * Liefert einen Seed asynchron. Wenn eine Zahl mitgegeben wird, hat diese Vorrang.
      */
-    public long resolveSeed(Optional<Long> explicitSeed) {
+    public CompletableFuture<Long> resolveSeedAsync(Optional<Long> explicitSeed) {
         if (explicitSeed.isPresent()) {
-            return explicitSeed.get();
+            return CompletableFuture.completedFuture(explicitSeed.get());
         }
-        return requestSeedFromDriver().orElseGet(() -> {
-            long seed = fallback.nextSeed();
-            logger.warning("[mc_mycelia] Fallback auf sicheren Seed, Treiber nicht erreichbar.");
-            return seed;
-        });
+        return CompletableFuture.supplyAsync(() -> requestSeedFromDriver()
+                .orElseGet(() -> {
+                    long seed = fallback.nextSeed();
+                    logger.warning("[mc_mycelia] Fallback auf sicheren Seed, Treiber nicht erreichbar.");
+                    return seed;
+                }));
+    }
+
+    public long nextSecureSeed() {
+        return fallback.nextSeed();
     }
 
     private Optional<Long> requestSeedFromDriver() {

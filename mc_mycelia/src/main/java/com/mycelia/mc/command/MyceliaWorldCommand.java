@@ -11,7 +11,7 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.entity.Player;
-
+import org.bukkit.scheduler.BukkitScheduler;
 import java.util.Optional;
 
 public class MyceliaWorldCommand implements CommandExecutor {
@@ -33,8 +33,27 @@ public class MyceliaWorldCommand implements CommandExecutor {
 
         String worldName = args[0];
         Optional<Long> seed = parseSeed(args);
-        long resolvedSeed = driver.resolveSeed(seed);
+        if (seed.isPresent()) {
+            createWorldSync(sender, worldName, seed.get());
+            return true;
+        }
 
+        sender.sendMessage("§7Hole Seed asynchron vom Mycelia-Treiber...");
+        driver.resolveSeedAsync(Optional.empty())
+                .whenComplete((resolvedSeed, error) -> {
+                    long finalSeed = resolvedSeed;
+                    if (error != null) {
+                        plugin.getLogger().warning("[mc_mycelia] Asynchroner Seed-Aufruf fehlgeschlagen: " + error.getMessage());
+                        finalSeed = driver.nextSecureSeed();
+                    }
+                    long seedForWorld = finalSeed;
+                    BukkitScheduler scheduler = plugin.getServer().getScheduler();
+                    scheduler.runTask(plugin, () -> createWorldSync(sender, worldName, seedForWorld));
+                });
+        return true;
+    }
+
+    private void createWorldSync(CommandSender sender, String worldName, long resolvedSeed) {
         FileConfiguration config = plugin.getConfig();
         MyceliaChunkGenerator generator = MyceliaChunkGenerator.fromConfig(config, resolvedSeed);
 
@@ -45,13 +64,12 @@ public class MyceliaWorldCommand implements CommandExecutor {
         World world = Bukkit.createWorld(creator);
         if (world != null) {
             sender.sendMessage("§aNeue Mycelia-Welt erzeugt: " + world.getName() + " (Seed: " + resolvedSeed + ")");
-            if (sender instanceof Player player) {
+            if (sender instanceof Player player && player.isOnline()) {
                 player.teleport(world.getSpawnLocation());
             }
         } else {
             sender.sendMessage("§cWelt konnte nicht erzeugt werden. Siehe Server-Logs für Details.");
         }
-        return true;
     }
 
     private Optional<Long> parseSeed(String[] args) {
