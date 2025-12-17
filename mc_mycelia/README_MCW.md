@@ -54,6 +54,9 @@ Umfasst den `/myceliaworld`-Befehl, den Treiber-Workflow und die Mycelia-spezifi
 - Pfade mit Leerzeichen im `driver.command` können gequotet werden; das Command wird vor der Tokenisierung normalisiert.
 - Dein Python-Skript kann thematische Paletten ausgeben; das Plugin übernimmt Materialnamen direkt via `Material.matchMaterial`.
 - Achte darauf, dass Fehlermeldungen im Skript nur auf STDERR gehen; STDOUT muss eine einzige JSON-Zeile bleiben (sonst greift der Fallback).
+- Häufige Stolperfallen beim Python-Skript:
+  - Verwende `from __future__ import annotations` (mit zwei Unterstrichen), sonst schlägt der Import fehl.
+  - Nutze `__file__` (nicht `_file_`) für den Skriptpfad, falls du den DLL-Ort relativ zum Skript ermittelst.
 
 ## Python-Treiber (Beispiel: `mein_subqg_seed_script.py`)
 - Liefert exakt eine JSON-Zeile mit den Keys: `seed`, `baseBlock`, `surfaceBlock`, `oreBlock`, `scale`, `seaLevel`.
