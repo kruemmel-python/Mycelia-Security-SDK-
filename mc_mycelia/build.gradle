@@ -1,0 +1,38 @@
+plugins {
+    id 'java'
+}
+
+group = 'com.mycelia.mc'
+version = '0.1.0'
+
+java {
+    // Paper 1.21.x benötigt Java 21 zur Laufzeit
+    sourceCompatibility = JavaVersion.VERSION_21
+    targetCompatibility = JavaVersion.VERSION_21
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    // Erzwingt Bytecode für Java 21, passend zu Paper 1.21.x
+    options.release = 21
+}
+
+tasks.withType(Jar).configureEach {
+    archiveBaseName = 'mc_mycelia'
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        name = 'spigotmc'
+        url = 'https://hub.spigotmc.org/nexus/content/repositories/snapshots/'
+    }
+    maven {
+        name = 'papermc'
+        url = 'https://repo.papermc.io/repository/maven-public/'
+    }
+}
+
+dependencies {
+    compileOnly 'io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT'
+}
