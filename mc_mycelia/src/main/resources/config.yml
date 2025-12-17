@@ -1,0 +1,16 @@
+driver:
+  # Prozess, der einen Seed (long) über STDOUT zurückliefert. Passe den Pfad auf deinen
+  # SubQG/Mycel-Treiber an. Leer lassen, um direkt auf kryptografisch sichere Seeds
+  # zu fallen.
+  command: ""
+  # Für den ersten Aufruf (Kernel-Warmup) kann ein höheres Timeout nötig sein.
+  timeoutSeconds: 60
+
+world:
+  # Basis-Block-ID (z.B. STONE, DEEPSLATE). Wird für die Grundplatte verwendet,
+  # falls keine eigenen Höhenkarten aus dem Treiber kommen.
+  baseBlock: STONE
+  surfaceBlock: GRASS_BLOCK
+  seaLevel: 62
+  amplitude: 24
+  scale: 0.015
