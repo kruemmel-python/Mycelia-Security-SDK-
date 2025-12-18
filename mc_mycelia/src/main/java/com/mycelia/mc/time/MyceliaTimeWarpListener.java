@@ -8,11 +8,11 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.world.ChunkLoadEvent;
 
-public class MyceliaChaosListener implements Listener {
+public class MyceliaTimeWarpListener implements Listener {
 
     private final MyceliaWorldPlugin plugin;
 
-    public MyceliaChaosListener(MyceliaWorldPlugin plugin) {
+    public MyceliaTimeWarpListener(MyceliaWorldPlugin plugin) {
         this.plugin = plugin;
     }
 

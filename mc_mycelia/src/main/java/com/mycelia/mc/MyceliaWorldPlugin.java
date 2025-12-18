@@ -13,7 +13,7 @@ import com.mycelia.mc.generation.MyceliaBiomeProfile;
 import com.mycelia.mc.generation.MyceliaChunkGenerator;
 import com.mycelia.mc.generation.MyceliaEvolutionManager;
 import com.mycelia.mc.interaction.MyceliaNpcDialogue;
-import com.mycelia.mc.time.MyceliaChaosListener;
+import com.mycelia.mc.time.MyceliaTimeWarpListener;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.WorldCreator;
@@ -38,7 +38,7 @@ public class MyceliaWorldPlugin extends JavaPlugin {
     private final NarrativeSummaryCache narrativeSummaryCache = new NarrativeSummaryCache();
     private volatile double otocChaosFactor = 0.5D;
     private final Set<String> timeWarpZones = ConcurrentHashMap.newKeySet();
-    private MyceliaChaosListener chaosListener;
+    private MyceliaTimeWarpListener timeWarpListener;
 
     @Override
     public void onEnable() {
@@ -80,11 +80,11 @@ public class MyceliaWorldPlugin extends JavaPlugin {
 
         loadPersistedWorlds();
 
-        this.chaosListener = new MyceliaChaosListener(this);
-        getServer().getPluginManager().registerEvents(chaosListener, this);
+        this.timeWarpListener = new MyceliaTimeWarpListener(this);
+        getServer().getPluginManager().registerEvents(timeWarpListener, this);
         startDreamStateTask();
         startOtocTask();
-        startTimeAnomalyTick();
+        startTimeWarpTick();
 
         getServer().getPluginManager().registerEvents(new MyceliaNpcDialogue(myceliaDriver), this);
 
@@ -250,11 +250,11 @@ public class MyceliaWorldPlugin extends JavaPlugin {
         }, periodTicks, periodTicks);
     }
 
-    private void startTimeAnomalyTick() {
+    private void startTimeWarpTick() {
         long tickInterval = 20L; // jede Sekunde
         getServer().getScheduler().runTaskTimer(this, () -> {
-            if (chaosListener != null) {
-                chaosListener.tick();
+            if (timeWarpListener != null) {
+                timeWarpListener.tick();
             }
         }, tickInterval, tickInterval);
     }
