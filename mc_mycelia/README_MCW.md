@@ -57,7 +57,7 @@ Umfasst den `/myceliaworld`-Befehl, den Treiber-Workflow und die Mycelia-spezifi
 - Häufige Stolperfallen beim Python-Skript:
   - Verwende `from __future__ import annotations` (mit zwei Unterstrichen), sonst schlägt der Import fehl.
   - Nutze `__file__` (nicht `_file_`) für den Skriptpfad, falls du den DLL-Ort relativ zum Skript ermittelst.
-  - Setze bei langen GPU-Initialisierungen den Timeout passend (Arg `--timeout` oder env `MYCELIA_DRIVER_TIMEOUT`, Default 5 s), damit kein unnötiger Fallback ausgelöst wird.
+  - Setze bei langen GPU-Initialisierungen den Timeout passend (Arg `--timeout` oder env `MYCELIA_DRIVER_TIMEOUT`, Default 20 s), damit kein unnötiger Fallback ausgelöst wird.
 
 ## Python-Treiber (Beispiel: `mein_subqg_seed_script.py`)
 - Liefert exakt eine JSON-Zeile mit den Keys: `seed`, `baseBlock`, `surfaceBlock`, `oreBlock`, `scale`, `seaLevel`.
