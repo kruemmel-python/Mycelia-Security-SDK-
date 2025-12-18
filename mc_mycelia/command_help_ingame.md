@@ -5,7 +5,7 @@ Diese Datei beschreibt alle ingame verfügbaren Kommandos (inkl. der jüngsten F
 ## Befehle
 
 ### `/myceliaworld <weltname> [--seed <zahl>]`
-Erzeugt eine neue Mycelia-Welt mit optionalem Seed. Nutzt den Treiber (oder Fallback) und speichert DNA/Metadaten.
+Erzeugt eine neue Mycelia-Welt mit optionalem Seed. Nutzt den Treiber (oder Fallback) und speichert DNA/Metadaten. Pro Absender gilt ein 5s-Rate-Limit.
 
 ### `/myceliaworld list`
 Listet alle aktuell geladenen Welten.
@@ -29,13 +29,13 @@ Neutralisiert die Evolution (Bias 0) und fixiert damit langsame Drift.
 Verstärkt Korruption (Bias 3) und mutiert DNA/Seed deutlicher.
 
 ### `/mycelia debug`
-Zeigt Treiber-Telemetrie (letzter Call, Dauer, Fallbacks, Fehler, Persistent-Status).
+Zeigt Treiber-Telemetrie (letzter Call, Dauer, Fallbacks, Fehler, Persistent-Status inklusive Ping-Ergebnis).
 
 ### `/mycelia health`
 Zeigt Warmup-Timeout, Treiberversion, Kernel-Fingerprint und Persistent-Status.
 
 ### `/mycelia lore`
-Generiert eine aktuelle emergente Lore-Phrase aus dem Symbolic-Abstraction-Kernel und zeigt sie dem Spieler.
+Generiert eine aktuelle emergente Lore-Phrase aus dem Symbolic-Abstraction-Kernel und zeigt sie dem Spieler (nur Spieler, nicht Konsole).
 
 ### `/mycelia dream [weltname]`
 Aktualisiert den Dream-State-Gradienten (Ideal Gradient) für die angegebene Welt (Standard: eigene Welt) und speichert ihn im Cache; beeinflusst Dungeon-/Untergrund-Theming.
@@ -93,7 +93,7 @@ biomes:
     temperature: [0.4, 0.9]
     blocks:
       base: MOSS_BLOCK
-    surface: PODZOL
+      surface: PODZOL
       ore: EMERALD_BLOCK
     mobs:
       hostileBoost: 1.1
@@ -101,7 +101,7 @@ biomes:
 
 ### Beispiel-Anpassungen
 
-- **Persistent Driver aktivieren**: `driver.persistent.enabled: true` und `driver.persistent.command` auf den Python-Treiber setzen, um GPU-Kontext warm zu halten.
+- **Persistent Driver aktivieren**: `driver.persistent.enabled: true` und `driver.persistent.command` auf den Python-Treiber setzen, um GPU-Kontext warm zu halten. Bei Start wird automatisch ein Ping versucht.
 - **Dungeon-Theming stärker beeinflussen**: `evolution.mutationsPerWorld` erhöhen oder zusätzliche Biome mit extremen Humidity/Temperature-Bereichen hinzufügen.
 - **Lore/Chaos testen**: `/mycelia lore` für Text, `/mycelia otoc` für Chaos-Faktor, `/mycelia timewarp` für lokale Zeit-Anomalie in einem Chunk.
 
