@@ -85,7 +85,7 @@ public class MyceliaDriverService {
         java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
         payload.put("cmd", "world");
         seed.ifPresent(value -> payload.put("seed", value));
-        return send(payload).flatMap(driver::parsePayload);
+        return sendWithRestart(payload).flatMap(driver::parsePayload);
     }
 
     public synchronized Optional<String> requestNoise(int x, int z) {
@@ -93,7 +93,7 @@ public class MyceliaDriverService {
     }
 
     public synchronized Optional<float[]> requestSymbolicAbstraction(int signalCount, float[] narrativeEmbeds, float[] weights) {
-        return send(Map.of(
+        return sendWithRestart(Map.of(
                         "cmd", "symbolic_abstract",
                         "signalCount", signalCount,
                         "narrativeEmbeds", narrativeEmbeds,
@@ -102,12 +102,12 @@ public class MyceliaDriverService {
     }
 
     public synchronized Optional<float[]> requestDreamState(int size) {
-        return send(Map.of("cmd", "dream_state", "size", size))
+        return sendWithRestart(Map.of("cmd", "dream_state", "size", size))
                 .map(JsonUtil::parseFloatArray);
     }
 
     public synchronized Optional<Double> requestOTOC() {
-        return send(Map.of("cmd", "otoc_chaos"))
+        return sendWithRestart(Map.of("cmd", "otoc_chaos"))
                 .map(resp -> {
                     try {
                         return Double.parseDouble(resp.trim());
@@ -116,6 +116,15 @@ public class MyceliaDriverService {
                         return arr.length > 0 ? (double) arr[0] : null;
                     }
                 });
+    }
+
+    private Optional<String> sendWithRestart(Map<String, Object> payload) {
+        Optional<String> first = send(payload);
+        if (first.isPresent()) return first;
+        // attempt one restart then retry
+        stop();
+        start();
+        return send(payload);
     }
 
     private Optional<String> send(Map<String, Object> payload) {

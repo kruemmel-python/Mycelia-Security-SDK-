@@ -140,6 +140,12 @@ public class MyceliaDriver {
         try {
             if (persistentEnabled && persistentService != null) {
                 Optional<MyceliaWorldData> persistent = persistentService.requestWorld(Optional.empty(), this);
+                if (persistent.isEmpty()) {
+                    // einmal neu starten und erneut versuchen
+                    persistentService.stop();
+                    persistentService.start();
+                    persistent = persistentService.requestWorld(Optional.empty(), this);
+                }
                 persistent.ifPresent(data -> lastDriverError = "");
                 return persistent;
             }
@@ -356,7 +362,9 @@ public class MyceliaDriver {
             Optional<MyceliaWorldData> kv = parseKeyValuePayload(trimmed);
             if (kv.isPresent()) return kv;
 
-            logger.warning("Treiber antwortete, aber Format nicht erkennbar: " + trimmed);
+            if (!trimmed.startsWith("[")) {
+                logger.warning("Treiber antwortete, aber Format nicht erkennbar: " + trimmed);
+            }
             return Optional.empty();
         } catch (Exception ex) {
             logger.warning("Treiber-Antwort konnte nicht gelesen werden: " + summarizeException(ex));
