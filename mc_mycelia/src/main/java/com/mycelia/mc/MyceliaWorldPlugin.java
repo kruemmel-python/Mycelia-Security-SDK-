@@ -32,7 +32,7 @@ public class MyceliaWorldPlugin extends JavaPlugin {
         // nicht den ersten Command blockiert oder in den Timeout läuft.
         getServer().getScheduler().runTaskAsynchronously(this, () -> {
             getLogger().info("[mc_mycelia] Warmup: Treiber wird vorgeladen...");
-            myceliaDriver.resolveWorldDataAsync(Optional.empty()).join();
+            myceliaDriver.resolveWorldDataWarmupAsync(Optional.empty()).join();
             getLogger().info("[mc_mycelia] Warmup: abgeschlossen.");
         });
     }

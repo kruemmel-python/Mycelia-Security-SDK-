@@ -25,6 +25,7 @@ public class MyceliaDriver {
     private final Logger logger;
     private final String driverCommand;
     private final Duration timeout;
+    private final Duration warmupTimeout;
     private final SecureSeedFallback fallback;
     private final String defaultBaseBlock;
     private final String defaultSurfaceBlock;
@@ -37,6 +38,8 @@ public class MyceliaDriver {
         this.driverCommand = normalize(config.getString("driver.command", ""));
         int timeoutSeconds = config.getInt("driver.timeoutSeconds", 5);
         this.timeout = Duration.ofSeconds(Math.max(timeoutSeconds, 1));
+        int warmupTimeoutSeconds = config.getInt("driver.warmupTimeoutSeconds", timeoutSeconds);
+        this.warmupTimeout = Duration.ofSeconds(Math.max(warmupTimeoutSeconds, 1));
         this.fallback = new SecureSeedFallback();
         this.defaultBaseBlock = config.getString("world.baseBlock", "STONE");
         this.defaultSurfaceBlock = config.getString("world.surfaceBlock", "MYCELIUM");
@@ -46,18 +49,26 @@ public class MyceliaDriver {
     }
 
     public CompletableFuture<MyceliaWorldData> resolveWorldDataAsync(Optional<Long> explicitSeed) {
+        return resolveWithTimeout(explicitSeed, timeout);
+    }
+
+    public CompletableFuture<MyceliaWorldData> resolveWorldDataWarmupAsync(Optional<Long> explicitSeed) {
+        return resolveWithTimeout(explicitSeed, warmupTimeout);
+    }
+
+    private CompletableFuture<MyceliaWorldData> resolveWithTimeout(Optional<Long> explicitSeed, Duration timeoutToUse) {
         return CompletableFuture.supplyAsync(() -> {
             if (explicitSeed.isPresent()) {
                 return createFallbackData(explicitSeed.get());
             }
-            return requestWorldDataFromDriver().orElseGet(() -> {
+            return requestWorldDataFromDriver(timeoutToUse).orElseGet(() -> {
                 logger.warning("Fallback auf sichere Welt-Daten, Treiber nicht erreichbar oder Antwort unbrauchbar.");
                 return createFallbackData(fallback.nextSeed());
             });
         });
     }
 
-    private Optional<MyceliaWorldData> requestWorldDataFromDriver() {
+    private Optional<MyceliaWorldData> requestWorldDataFromDriver(Duration timeoutToUse) {
         if (driverCommand == null || driverCommand.isBlank()) {
             return Optional.empty();
         }
@@ -69,11 +80,12 @@ public class MyceliaDriver {
 
         ProcessBuilder builder = new ProcessBuilder(command);
         builder.redirectErrorStream(false);
+        builder.environment().put("MYCELIA_DRIVER_TIMEOUT", String.valueOf(timeoutToUse.toSeconds()));
         try {
             Process process = builder.start();
-            if (!process.waitFor(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
+            if (!process.waitFor(timeoutToUse.toMillis(), TimeUnit.MILLISECONDS)) {
                 process.destroyForcibly();
-                logger.warning("Mycelia-Treiber überschritt Timeout von " + timeout.toSeconds() + "s.");
+                logger.warning("Mycelia-Treiber überschritt Timeout von " + timeoutToUse.toSeconds() + "s.");
                 return Optional.empty();
             }
             try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
