@@ -1,6 +1,6 @@
 # Mycelia World Management (mc_mycelia)
 
-Umfasst den `/myceliaworld`-Befehl, den Treiber-Workflow und die Mycelia-spezifische Weltgenerierung (Java 21 / Paper 1.21).
+Umfasst den `/myceliaworld`-Befehl, den Treiber-Workflow und die Mycelia-spezifische Weltgenerierung (Java 21 / Paper-API 1.21.11).
 
 ## Befehle (In-Game)
 - `/myceliaworld list` – Zeigt alle geladenen Welten an.
@@ -12,7 +12,8 @@ Umfasst den `/myceliaworld`-Befehl, den Treiber-Workflow und die Mycelia-spezifi
 ## Treiber & Fallback
 - Konfiguration: `mc_mycelia/src/main/resources/config.yml`
   - `driver.command`: Prozess, der Weltdaten ausgibt (s. Format unten). Beispiel (Windows): `"C:\\Users\\ralfk\\AppData\\Local\\Programs\\Python\\Python312\\python.exe D:/mc-test/paper/mein_subqg_seed_script.py"`.
-  - `driver.timeoutSeconds`: Wartezeit pro Aufruf.
+  - `driver.timeoutSeconds` & `driver.warmupTimeoutSeconds`: maximale Laufzeiten für reguläre Aufrufe bzw. den Warmup-Start.
+  - `driver.persistent.enabled/command`: optionaler Dauerprozess; wird beim Serverstart gepingt und bevorzugt genutzt.
   - `world.*`: Fallback-Defaults, falls der Treiber keine gültigen Daten liefert (baseBlock, surfaceBlock, oreBlock, seaLevel, scale).
 - Aufruf: Der Treiber wird asynchron gestartet. Ausgabe wird robust geparst (JSON, einfacher Seed, oder Key/Value-Liste). Bei Fehlern/Timeout greift ein kryptografisch sicherer Fallback.
 - Unterstützte Ausgabeformate (eine Zeile):
@@ -21,9 +22,9 @@ Umfasst den `/myceliaworld`-Befehl, den Treiber-Workflow und die Mycelia-spezifi
   - Key/Value: `seed=123 baseBlock=STONE surfaceBlock=MYCELIUM oreBlock=AMETHYST_BLOCK scale=0.03 seaLevel=45`
 
 ## Welt-Erzeugung (Schritte)
-1) Spieler ruft `/myceliaworld <name> [--seed]` auf.
+1) Spieler ruft `/myceliaworld <name> [--seed]` auf (Rate-Limit: 5 s pro Absender).
 2) Treiber wird asynchron kontaktiert; bei Fehlern oder fehlenden Daten werden sichere Fallback-Daten genutzt.
-3) Auf dem Main-Thread wird ein `WorldCreator` mit `MyceliaChunkGenerator` instanziiert und die Welt geladen/teleportiert.
+3) Auf dem Main-Thread wird ein `WorldCreator` mit `MyceliaChunkGenerator` instanziiert und die Welt geladen/teleportiert. DNA & Metadaten werden in `worlds.yml` persistiert.
 
 ## Terrain-Algorithmus (MyceliaChunkGenerator)
 - Rauschbasis: Simplex Noise 3D, skaliert mit `scale` (Default 0.025) und vertikalem Gradienten.
@@ -43,10 +44,13 @@ Umfasst den `/myceliaworld`-Befehl, den Treiber-Workflow und die Mycelia-spezifi
 1) Prüft, ob die Welt geladen ist und ob Spieler online sind (`--force` überschreibt Blocker).
 2) Teleportiert verbleibende Spieler in die erste geladene Welt.
 3) Entlädt die Welt (`Bukkit.unloadWorld` ohne Speichern). Bei Fehlschlag Abbruch.
-4) Löscht den Weltenordner rekursiv asynchron und informiert den Absender nach Abschluss.
+4) Löscht den Weltenordner rekursiv asynchron und informiert den Absender nach Abschluss. Metadaten werden aus `worlds.yml` entfernt.
 
-## Warmup
-- Beim Plugin-Start wird der Treiber einmal asynchron vorgewärmt, damit der erste Spielerbefehl nicht durch Prozessstart/IO gebremst wird.
+## Warmup & Scheduler
+- Beim Plugin-Start wird der Treiber einmal asynchron vorgewärmt; persistenten Treibern wird zuerst der Ping geschickt.
+- Alle 10 Minuten: Dream-State-Gradient + Narrative-Summary-Cache für jede aktive Welt erneuern.
+- Alle 5 Minuten: OTOC/Chaos-Faktor aus Treiber abfragen.
+- Jede Sekunde: Time-Warp-Zonen anwenden (Chunk-Freeze)
 
 ## Hinweise für externe Treiber
 - Eine (1) Zeile Output genügt; nur die letzte nicht-leere Zeile wird ausgewertet.
