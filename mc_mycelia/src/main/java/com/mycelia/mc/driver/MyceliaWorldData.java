@@ -6,6 +6,14 @@ public record MyceliaWorldData(
         String surfaceBlock,
         String oreBlock,
         double scale,
-        int seaLevel
+        int seaLevel,
+        java.util.List<com.mycelia.mc.generation.MyceliaBiomeProfile> biomes,
+        MyceliaWorldDNA dna,
+        boolean fromFallback
 ) {
+    public MyceliaWorldData {
+        if (biomes == null) {
+            biomes = java.util.List.of();
+        }
+    }
 }

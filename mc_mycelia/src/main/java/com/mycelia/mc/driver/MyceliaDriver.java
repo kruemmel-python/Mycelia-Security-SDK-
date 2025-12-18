@@ -1,5 +1,8 @@
 package com.mycelia.mc.driver;
 
+import com.mycelia.mc.generation.MyceliaBiomeProfile;
+import com.mycelia.mc.generation.MyceliaBiomeRegistry;
+import org.bukkit.Material;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.Plugin;
 
@@ -9,6 +12,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -16,7 +20,6 @@ import java.util.Optional;
 import java.util.StringJoiner;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
 import java.util.logging.Logger;
 
 public class MyceliaDriver {
@@ -27,12 +30,24 @@ public class MyceliaDriver {
     private final Duration timeoutRuntime;
     private final Duration timeoutWarmup;
 
+    private final boolean persistentEnabled;
+    private final MyceliaDriverService persistentService;
+
     private final SecureSeedFallback fallback;
     private final String defaultBaseBlock;
     private final String defaultSurfaceBlock;
     private final String defaultOreBlock;
     private final double defaultScale;
     private final int defaultSeaLevel;
+
+    private final String driverVersion;
+    private final String kernelFingerprint;
+    private final List<MyceliaBiomeProfile> biomeProfiles;
+
+    private volatile Instant lastDriverCall = Instant.EPOCH;
+    private volatile long lastDriverDurationMs = 0L;
+    private volatile int fallbackCount = 0;
+    private volatile String lastDriverError = "";
 
     public MyceliaDriver(Plugin plugin, FileConfiguration config) {
         this.logger = plugin.getLogger();
@@ -44,6 +59,12 @@ public class MyceliaDriver {
         this.timeoutRuntime = Duration.ofSeconds(Math.max(runtimeSeconds, 1));
         this.timeoutWarmup = Duration.ofSeconds(Math.max(warmupSeconds, 1));
 
+        this.persistentEnabled = config.getBoolean("driver.persistent.enabled", false);
+        String persistentCmd = normalize(config.getString("driver.persistent.command", driverCommand));
+        this.persistentService = persistentEnabled && !persistentCmd.isBlank()
+                ? new MyceliaDriverService(tokenize(persistentCmd), timeoutRuntime, logger)
+                : null;
+
         this.fallback = new SecureSeedFallback();
 
         this.defaultBaseBlock = config.getString("world.baseBlock", "STONE");
@@ -51,6 +72,11 @@ public class MyceliaDriver {
         this.defaultOreBlock = config.getString("world.oreBlock", "AMETHYST_BLOCK");
         this.defaultScale = config.getDouble("world.scale", 0.025D);
         this.defaultSeaLevel = config.getInt("world.seaLevel", 40);
+
+        this.driverVersion = config.getString("driver.version", "mycelia-driver 0.0.0");
+        this.kernelFingerprint = config.getString("driver.kernelFingerprint", "unknown-kernel");
+
+        this.biomeProfiles = new MyceliaBiomeRegistry(config.getConfigurationSection("biomes")).getProfiles();
     }
 
     public CompletableFuture<MyceliaWorldData> resolveWorldDataAsync(Optional<Long> explicitSeed) {
@@ -70,37 +96,76 @@ public class MyceliaDriver {
             if (driverCommand == null || driverCommand.isBlank()) {
                 return;
             }
+            if (persistentEnabled && persistentService != null) {
+                persistentService.start();
+                persistentService.ping();
+            }
             requestWorldDataFromDriver(timeoutWarmup);
         });
     }
 
-    private Optional<MyceliaWorldData> requestWorldDataFromDriver(Duration timeout) {
-        if (driverCommand == null || driverCommand.isBlank()) {
-            return Optional.empty();
-        }
-
-        List<String> command = tokenize(driverCommand);
-        if (command.isEmpty()) {
-            return Optional.empty();
-        }
-
-        ProcessBuilder builder = new ProcessBuilder(command);
-        builder.redirectErrorStream(false);
-
-        // Workdir auf Skriptverzeichnis setzen (wie manueller Aufruf)
-        File workDir = inferWorkDirFromCommand(command);
-        if (workDir != null) {
-            builder.directory(workDir);
-        }
-
-        // Timeout an Python übergeben
-        builder.environment().put("MYCELIA_DRIVER_TIMEOUT", String.valueOf(timeout.toSeconds()));
-
-        // Streams parallel konsumieren, sonst kann der Child bei viel Output blockieren
-        List<String> stdoutLines = Collections.synchronizedList(new ArrayList<>());
-        StringBuilder stderrAll = new StringBuilder(4096);
-
+    public String requestEmergentLorePhrase(org.bukkit.World world) {
         try {
+            float[] noise = sampleSpawnField(world, 1024);
+            float archetype = average(noise, 0, noise.length / 2);
+            float energy = average(noise, noise.length / 2, noise.length);
+            Optional<float[]> symbolic = persistentService != null
+                    ? persistentService.requestSymbolicAbstraction(32, noise, noise)
+                    : Optional.empty();
+            float[] used = symbolic.orElse(noise);
+            if (used.length >= 2) {
+                archetype = used[0];
+                energy = used[1];
+            }
+            return new com.mycelia.mc.lore.LoreEngine().generateLore(archetype, energy);
+        } catch (Exception e) {
+            logger.warning("Lore-Generator Fehler: " + e.getMessage());
+            return "Wir sahen die Stille des Netzes und es war wie verblasste Erinnerung.";
+        }
+    }
+
+    public float[] requestDreamState(int size) {
+        int safeSize = Math.max(16, size);
+        Optional<float[]> response = persistentService != null ? persistentService.requestDreamState(safeSize) : Optional.empty();
+        return response.filter(arr -> arr.length > 0).orElse(generateDeterministicArray(safeSize, 0.13f));
+    }
+
+    public double requestGlobalOTOC() {
+        Optional<Double> otoc = persistentService != null ? persistentService.requestOTOC() : Optional.empty();
+        return otoc.orElse(0.5D);
+    }
+
+    private Optional<MyceliaWorldData> requestWorldDataFromDriver(Duration timeout) {
+        Instant start = Instant.now();
+        try {
+            if (persistentEnabled && persistentService != null) {
+                Optional<MyceliaWorldData> persistent = persistentService.requestWorld(Optional.empty(), this);
+                persistent.ifPresent(data -> lastDriverError = "");
+                return persistent;
+            }
+
+            if (driverCommand == null || driverCommand.isBlank()) {
+                return Optional.empty();
+            }
+
+            List<String> command = tokenize(driverCommand);
+            if (command.isEmpty()) {
+                return Optional.empty();
+            }
+
+            ProcessBuilder builder = new ProcessBuilder(command);
+            builder.redirectErrorStream(false);
+
+            File workDir = inferWorkDirFromCommand(command);
+            if (workDir != null) {
+                builder.directory(workDir);
+            }
+
+            builder.environment().put("MYCELIA_DRIVER_TIMEOUT", String.valueOf(timeout.toSeconds()));
+
+            List<String> stdoutLines = Collections.synchronizedList(new ArrayList<>());
+            StringBuilder stderrAll = new StringBuilder(4096);
+
             Process process = builder.start();
 
             Thread stdoutGobbler = new Thread(
@@ -121,22 +186,14 @@ public class MyceliaDriver {
             if (!finished) {
                 process.destroyForcibly();
                 logger.warning("Mycelia-Treiber überschritt Timeout von " + timeout.toSeconds() + "s.");
-
-                // best effort: Streams noch kurz leerziehen
                 joinQuietly(stdoutGobbler, 200);
                 joinQuietly(stderrGobbler, 200);
-
-                // STDERR ggf. noch loggen (meist nützlich bei Timeout)
                 logStderrSmart(stderrAll.toString());
-
                 return Optional.empty();
             }
 
-            // Prozess ist fertig: Streams zu Ende lesen (best effort)
             joinQuietly(stdoutGobbler, 500);
             joinQuietly(stderrGobbler, 500);
-
-            // STDERR smart loggen (INFO vs WARN)
             logStderrSmart(stderrAll.toString());
 
             String payload = lastNonBlank(stdoutLines);
@@ -149,10 +206,15 @@ public class MyceliaDriver {
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             logger.warning("Treiber-Aufruf unterbrochen: " + summarizeException(ex));
+            lastDriverError = ex.getMessage();
             return Optional.empty();
         } catch (Exception ex) {
             logger.warning("Treiber-Aufruf fehlgeschlagen: " + summarizeException(ex));
+            lastDriverError = ex.getMessage();
             return Optional.empty();
+        } finally {
+            lastDriverCall = Instant.now();
+            lastDriverDurationMs = Duration.between(start, lastDriverCall).toMillis();
         }
     }
 
@@ -251,7 +313,8 @@ public class MyceliaDriver {
         String ore = extract(json, "oreBlock", defaultOreBlock);
         double scale = Double.parseDouble(extract(json, "scale", String.valueOf(defaultScale)));
         int seaLevel = Integer.parseInt(extract(json, "seaLevel", String.valueOf(defaultSeaLevel)));
-        return new MyceliaWorldData(seed, base, surface, ore, scale, seaLevel);
+        boolean fromFallback = Boolean.parseBoolean(extract(json, "fallback", "false"));
+        return sanitize(new MyceliaWorldData(seed, base, surface, ore, scale, seaLevel, biomeProfiles, MyceliaWorldDNA.compute(seed, base, surface, ore, scale, driverVersion, kernelFingerprint), fromFallback));
     }
 
     private String extract(String json, String key, String def) {
@@ -271,10 +334,12 @@ public class MyceliaDriver {
     }
 
     public MyceliaWorldData createFallbackData(long seed) {
-        return new MyceliaWorldData(seed, defaultBaseBlock, defaultSurfaceBlock, defaultOreBlock, defaultScale, defaultSeaLevel);
+        fallbackCount++;
+        MyceliaWorldDNA dna = MyceliaWorldDNA.compute(seed, defaultBaseBlock, defaultSurfaceBlock, defaultOreBlock, defaultScale, driverVersion, kernelFingerprint);
+        return new MyceliaWorldData(seed, defaultBaseBlock, defaultSurfaceBlock, defaultOreBlock, defaultScale, defaultSeaLevel, biomeProfiles, dna, true);
     }
 
-    private Optional<MyceliaWorldData> parsePayload(String payload) {
+    Optional<MyceliaWorldData> parsePayload(String payload) {
         String trimmed = payload.trim();
         if (trimmed.isEmpty()) return Optional.empty();
 
@@ -327,7 +392,55 @@ public class MyceliaDriver {
                 default -> { }
             }
         }
-        return found ? Optional.of(new MyceliaWorldData(seed, base, surface, ore, scale, seaLevel)) : Optional.empty();
+        return found ? Optional.of(sanitize(new MyceliaWorldData(seed, base, surface, ore, scale, seaLevel, biomeProfiles, MyceliaWorldDNA.compute(seed, base, surface, ore, scale, driverVersion, kernelFingerprint), false))) : Optional.empty();
+    }
+
+    private MyceliaWorldData sanitize(MyceliaWorldData data) {
+        Material base = Material.matchMaterial(data.baseBlock());
+        Material surface = Material.matchMaterial(data.surfaceBlock());
+        Material ore = Material.matchMaterial(data.oreBlock());
+        if (base == null || surface == null || ore == null) {
+            fallbackCount++;
+            return createFallbackData(data.seed());
+        }
+        if (data.scale() <= 0.0D || data.scale() > 10.0D) {
+            fallbackCount++;
+            return createFallbackData(data.seed());
+        }
+        return data;
+    }
+
+    private float[] sampleSpawnField(org.bukkit.World world, int count) {
+        float[] values = new float[count];
+        org.bukkit.util.noise.SimplexNoiseGenerator sampler = new org.bukkit.util.noise.SimplexNoiseGenerator(world.getSeed());
+        for (int i = 0; i < count; i++) {
+            double x = world.getSpawnLocation().getX() + (i % 32);
+            double z = world.getSpawnLocation().getZ() + (i / 32);
+            values[i] = (float) sampler.noise(x * 0.05, z * 0.05);
+        }
+        return values;
+    }
+
+    private float average(float[] arr, int from, int to) {
+        if (arr == null || arr.length == 0) return 0;
+        int end = Math.min(arr.length, to);
+        int start = Math.max(0, from);
+        double sum = 0;
+        int count = 0;
+        for (int i = start; i < end; i++) {
+            sum += arr[i];
+            count++;
+        }
+        return count == 0 ? 0 : (float) (sum / count);
+    }
+
+    private float[] generateDeterministicArray(int size, float factor) {
+        float[] arr = new float[size];
+        java.util.Random r = new java.util.Random(Double.doubleToLongBits(factor));
+        for (int i = 0; i < size; i++) {
+            arr[i] = r.nextFloat();
+        }
+        return arr;
     }
 
     private String normalize(String value) {
@@ -383,5 +496,41 @@ public class MyceliaDriver {
             current = current.getCause();
         }
         return joiner.toString();
+    }
+
+    public long getLastDriverDurationMs() {
+        return lastDriverDurationMs;
+    }
+
+    public String getLastDriverError() {
+        return lastDriverError;
+    }
+
+    public int getFallbackCount() {
+        return fallbackCount;
+    }
+
+    public Instant getLastDriverCall() {
+        return lastDriverCall;
+    }
+
+    public boolean isPersistentEnabled() {
+        return persistentEnabled;
+    }
+
+    public Optional<MyceliaDriverService> getPersistentService() {
+        return Optional.ofNullable(persistentService);
+    }
+
+    public List<MyceliaBiomeProfile> getBiomeProfiles() {
+        return biomeProfiles;
+    }
+
+    public String getDriverVersion() {
+        return driverVersion;
+    }
+
+    public String getKernelFingerprint() {
+        return kernelFingerprint;
     }
 }
