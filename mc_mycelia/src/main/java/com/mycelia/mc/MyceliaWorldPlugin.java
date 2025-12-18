@@ -1,8 +1,13 @@
 package com.mycelia.mc;
 
+import com.mycelia.mc.api.Mycelia;
+import com.mycelia.mc.command.MyceliaCommand;
 import com.mycelia.mc.command.MyceliaWorldCommand;
 import com.mycelia.mc.driver.MyceliaDriver;
+import com.mycelia.mc.driver.MyceliaDriverService;
+import com.mycelia.mc.driver.MyceliaWorldDNA;
 import com.mycelia.mc.driver.MyceliaWorldData;
+import com.mycelia.mc.generation.MyceliaEvolutionManager;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -15,12 +20,33 @@ import java.io.IOException;
 public class MyceliaWorldPlugin extends JavaPlugin {
 
     private MyceliaDriver myceliaDriver;
+    private MyceliaEvolutionManager evolutionManager;
+    private final java.util.Map<String, MyceliaWorldData> activeWorlds = new java.util.concurrent.ConcurrentHashMap<>();
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
 
         this.myceliaDriver = new MyceliaDriver(this, getConfig());
+        long evolutionMinutes = getConfig().getLong("evolution.intervalMinutes", 5L);
+        int mutations = getConfig().getInt("evolution.mutationsPerWorld", 3);
+        this.evolutionManager = new MyceliaEvolutionManager(this, java.time.Duration.ofMinutes(Math.max(1, evolutionMinutes)), mutations);
+        this.evolutionManager.start();
+
+        org.bukkit.util.noise.SimplexNoiseGenerator apiNoise = new org.bukkit.util.noise.SimplexNoiseGenerator(42L);
+        Mycelia.install(new Mycelia(
+                (x, z) -> myceliaDriver.getPersistentService()
+                        .flatMap(service -> service.requestNoise(x, z))
+                        .map(str -> {
+                            try {
+                                return Double.parseDouble(str);
+                            } catch (NumberFormatException e) {
+                                return apiNoise.noise(x * 0.01, z * 0.01);
+                            }
+                        })
+                        .orElseGet(() -> apiNoise.noise(x * 0.01, z * 0.01)),
+                worldName -> java.util.Optional.ofNullable(activeWorlds.get(worldName)).map(MyceliaWorldData::dna)
+        ));
 
         PluginCommand command = getCommand("myceliaworld");
         if (command != null) {
@@ -30,12 +56,22 @@ public class MyceliaWorldPlugin extends JavaPlugin {
             getLogger().severe("mc_mycelia konnte den Command 'myceliaworld' nicht registrieren.");
         }
 
+        PluginCommand myceliaCmd = getCommand("mycelia");
+        if (myceliaCmd != null) {
+            myceliaCmd.setExecutor(new MyceliaCommand(this, myceliaDriver, evolutionManager));
+        }
+
         // Warmup: nutzt eigenes Warmup-Timeout (driver.warmupTimeoutSeconds)
         getServer().getScheduler().runTaskAsynchronously(this, () -> {
             getLogger().info("[mc_mycelia] Warmup: Treiber wird vorgeladen...");
             myceliaDriver.warmupAsync().join();
             getLogger().info("[mc_mycelia] Warmup: abgeschlossen.");
         });
+    }
+
+    @Override
+    public void onDisable() {
+        myceliaDriver.getPersistentService().ifPresent(MyceliaDriverService::stop);
     }
 
     public void saveWorldMeta(String worldName, MyceliaWorldData data) {
@@ -49,6 +85,14 @@ public class MyceliaWorldPlugin extends JavaPlugin {
         config.set(path + ".oreBlock", data.oreBlock());
         config.set(path + ".scale", data.scale());
         config.set(path + ".seaLevel", data.seaLevel());
+        MyceliaWorldDNA dna = data.dna();
+        if (dna != null) {
+            config.set(path + ".dna.hash", dna.hash());
+            config.set(path + ".dna.driver", dna.driverVersion());
+            config.set(path + ".dna.kernel", dna.kernelFingerprint());
+            config.set(path + ".dna.palette", dna.palette());
+            config.set(path + ".dna.scale", dna.scale());
+        }
 
         try {
             config.save(file);
@@ -61,5 +105,27 @@ public class MyceliaWorldPlugin extends JavaPlugin {
         File file = new File(getDataFolder(), "worlds.yml");
         FileConfiguration config = YamlConfiguration.loadConfiguration(file);
         return config.getConfigurationSection("worlds." + worldName);
+    }
+
+    public void registerActiveWorld(String name, MyceliaWorldData data) {
+        activeWorlds.put(name, data);
+        evolutionManager.setBias(name, data.fromFallback() ? 1 : 0);
+    }
+
+    public MyceliaEvolutionManager getEvolutionManager() {
+        return evolutionManager;
+    }
+
+    public MyceliaWorldData getWorldData(String worldName) {
+        return activeWorlds.get(worldName);
+    }
+
+    public void updateWorldData(String worldName, MyceliaWorldData data) {
+        if (data != null) {
+            activeWorlds.put(worldName, data);
+            saveWorldMeta(worldName, data);
+        } else {
+            activeWorlds.remove(worldName);
+        }
     }
 }

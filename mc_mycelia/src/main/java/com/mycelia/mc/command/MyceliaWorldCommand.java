@@ -15,13 +15,17 @@ import org.bukkit.entity.Player;
 import org.bukkit.scheduler.BukkitScheduler;
 
 import java.io.File;
+import java.time.Duration;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.stream.Collectors;
 
 public class MyceliaWorldCommand implements CommandExecutor {
 
     private final MyceliaWorldPlugin plugin;
     private final MyceliaDriver driver;
+    private final ConcurrentMap<String, Long> rateLimits = new ConcurrentHashMap<>();
 
     public MyceliaWorldCommand(MyceliaWorldPlugin plugin, MyceliaDriver driver) {
         this.plugin = plugin;
@@ -79,6 +83,10 @@ public class MyceliaWorldCommand implements CommandExecutor {
     }
 
     private void handleRemove(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("mc_mycelia.world.remove")) {
+            sender.sendMessage("§cKeine Berechtigung zum Entfernen von Welten.");
+            return;
+        }
         if (args.length < 2) {
             sender.sendMessage("§cUsage: /myceliaworld remove <world> [--force]");
             return;
@@ -106,6 +114,8 @@ public class MyceliaWorldCommand implements CommandExecutor {
             return;
         }
 
+        plugin.updateWorldData(worldName, null);
+
         File folder = world.getWorldFolder();
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             deleteDirectory(folder);
@@ -114,6 +124,14 @@ public class MyceliaWorldCommand implements CommandExecutor {
     }
 
     private void handleCreate(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("mc_mycelia.world.generate")) {
+            sender.sendMessage("§cKeine Berechtigung.");
+            return;
+        }
+        if (isRateLimited(sender)) {
+            sender.sendMessage("§cRate-Limit aktiv. Bitte kurz warten.");
+            return;
+        }
         String worldName = args[0];
         Optional<Long> seed = parseSeed(args);
         sender.sendMessage("§7Hole Welt-Daten asynchron vom Mycelia-Treiber...");
@@ -147,6 +165,22 @@ public class MyceliaWorldCommand implements CommandExecutor {
     }
 
     private void createWorldSync(CommandSender sender, String worldName, MyceliaWorldData data, boolean usedFallback) {
+        java.util.List<com.mycelia.mc.generation.MyceliaBiomeProfile> biomes = new java.util.ArrayList<>(data.biomes());
+        com.mycelia.mc.api.MyceliaAPI api = com.mycelia.mc.api.Mycelia.get();
+        if (api instanceof com.mycelia.mc.api.Mycelia mycelia) {
+            mycelia.getBiomeModifiers().forEach(mod -> mod.accept(biomes));
+        }
+        data = new MyceliaWorldData(
+                data.seed(),
+                data.baseBlock(),
+                data.surfaceBlock(),
+                data.oreBlock(),
+                data.scale(),
+                data.seaLevel(),
+                biomes,
+                data.dna(),
+                data.fromFallback()
+        );
         MyceliaChunkGenerator generator = new MyceliaChunkGenerator(data);
 
         WorldCreator creator = new WorldCreator(worldName);
@@ -156,10 +190,11 @@ public class MyceliaWorldCommand implements CommandExecutor {
         World world = Bukkit.createWorld(creator);
         if (world != null) {
             plugin.saveWorldMeta(worldName, data);
+            plugin.registerActiveWorld(worldName, data);
             if (usedFallback) {
                 sender.sendMessage("§eTreiber lieferte keine Daten, nutze sichere Fallback-Daten.");
             }
-            sender.sendMessage("§aNeue Mycelia-Welt erzeugt: " + world.getName() + " (Seed: " + data.seed() + ")");
+            sender.sendMessage("§aNeue Mycelia-Welt erzeugt: " + world.getName() + " (Seed: " + data.seed() + ") DNA: " + (data.dna() != null ? data.dna().hash() : "n/a"));
             if (sender instanceof Player player && player.isOnline()) {
                 player.teleport(world.getSpawnLocation());
             }
@@ -202,6 +237,22 @@ public class MyceliaWorldCommand implements CommandExecutor {
         sender.sendMessage("§7Erz-Adern: §d" + meta.getString("oreBlock"));
         sender.sendMessage("§7Skalierung: §b" + meta.getDouble("scale"));
         sender.sendMessage("§7Meeresspiegel: §3" + meta.getInt("seaLevel"));
+        ConfigurationSection dna = meta.getConfigurationSection("dna");
+        if (dna != null) {
+            sender.sendMessage("§7DNA: §5" + dna.getString("hash") + " §7Treiber: §f" + dna.getString("driver") + " §7Kernel: §f" + dna.getString("kernel"));
+        }
         sender.sendMessage("§8§m                             ");
+    }
+
+    private boolean isRateLimited(CommandSender sender) {
+        long now = System.currentTimeMillis();
+        long cooldownMs = Duration.ofSeconds(5).toMillis();
+        String key = sender.getName();
+        Long last = rateLimits.get(key);
+        if (last != null && (now - last) < cooldownMs) {
+            return true;
+        }
+        rateLimits.put(key, now);
+        return false;
     }
 }
