@@ -37,6 +37,10 @@ public class MyceliaCommand implements CommandExecutor {
             case "corrupt" -> handleBias(sender, 3, "Korruption verstärkt. Halte dich fest.");
             case "debug" -> handleDebug(sender);
             case "health" -> handleHealth(sender);
+            case "lore" -> handleLore(sender);
+            case "dream" -> handleDream(sender, args);
+            case "otoc" -> handleOtoc(sender);
+            case "timewarp" -> handleTimewarp(sender);
             default -> sender.sendMessage("§cUnbekannter Subcommand.");
         }
         return true;
@@ -99,5 +103,56 @@ public class MyceliaCommand implements CommandExecutor {
         sender.sendMessage("§7Treiber: §f" + driver.getDriverVersion());
         sender.sendMessage("§7Kernel: §f" + driver.getKernelFingerprint());
         sender.sendMessage("§7Persistent: §f" + (driver.isPersistentEnabled() ? "an" : "aus"));
+    }
+
+    private void handleLore(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§cNur Spieler können Lore abrufen.");
+            return;
+        }
+        if (!sender.hasPermission("mc_mycelia.debug")) {
+            sender.sendMessage("§cKeine Berechtigung für Lore.");
+            return;
+        }
+        String lore = driver.requestEmergentLorePhrase(player.getWorld());
+        player.sendMessage("§dMycelia-Lore§7: " + lore);
+    }
+
+    private void handleDream(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("mc_mycelia.debug")) {
+            sender.sendMessage("§cKeine Berechtigung.");
+            return;
+        }
+        String worldName = (sender instanceof Player p) ? p.getWorld().getName() : (args.length > 1 ? args[1] : null);
+        if (worldName == null) {
+            sender.sendMessage("§cBitte Welt angeben: /mycelia dream <world>");
+            return;
+        }
+        float[] gradient = driver.requestDreamState(256);
+        plugin.updateWorldData(worldName, plugin.getWorldData(worldName));
+        sender.sendMessage("§7Dream-State aktualisiert für §e" + worldName + "§7 (" + gradient.length + " Werte).");
+    }
+
+    private void handleOtoc(CommandSender sender) {
+        if (!sender.hasPermission("mc_mycelia.debug")) {
+            sender.sendMessage("§cKeine Berechtigung.");
+            return;
+        }
+        double chaos = driver.requestGlobalOTOC();
+        plugin.setOtocChaosFactor(chaos);
+        sender.sendMessage("§7Aktueller OTOC/Chaos-Faktor: §e" + chaos);
+    }
+
+    private void handleTimewarp(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            sender.sendMessage("§cNur Spieler können Timewarp setzen.");
+            return;
+        }
+        if (!sender.hasPermission("mc_mycelia.debug")) {
+            sender.sendMessage("§cKeine Berechtigung.");
+            return;
+        }
+        plugin.addTimeWarpZone(player.getLocation().getChunk());
+        sender.sendMessage("§7Time-Warp-Zone für Chunk gesetzt.");
     }
 }

@@ -9,8 +9,8 @@ commands:
     usage: /<command> <weltname> [--seed <zahl>]
     permission: mc_mycelia.world.generate
   mycelia:
-    description: Steuert den Mycelia-Kern (Evolution, Debug)
-    usage: /mycelia <attune|stabilize|corrupt|debug|health>
+    description: Steuert den Mycelia-Kern (Evolution, Debug, Lore, Anomalien)
+    usage: /mycelia <attune|stabilize|corrupt|debug|health|lore|dream|otoc|timewarp>
 permissions:
   mc_mycelia.world.generate:
     description: Erlaubt das Erstellen von Mycelia-basierten Welten
@@ -23,4 +23,7 @@ permissions:
     default: op
   mc_mycelia.debug:
     description: Erlaubt Diagnostik-Kommandos
+    default: op
+  mc_mycelia.lore:
+    description: Erlaubt Lore-/Traum-/OTOC-Kommandos
     default: op

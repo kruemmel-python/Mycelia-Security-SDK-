@@ -265,6 +265,10 @@ public class MyceliaWorldPlugin extends JavaPlugin {
         return otocChaosFactor;
     }
 
+    public void setOtocChaosFactor(double chaos) {
+        this.otocChaosFactor = chaos;
+    }
+
     public void addTimeWarpZone(org.bukkit.Chunk chunk) {
         timeWarpZones.add(chunkKey(chunk));
     }
