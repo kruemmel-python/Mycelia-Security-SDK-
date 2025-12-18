@@ -147,7 +147,10 @@ public class MyceliaDriver {
                     persistent = persistentService.requestWorld(Optional.empty(), this);
                 }
                 persistent.ifPresent(data -> lastDriverError = "");
-                return persistent;
+                if (persistent.isPresent()) {
+                    return persistent;
+                }
+                logger.warning("Persistenter Treiber lieferte keine Welt-Daten – wechsle auf Einmal-Aufruf.");
             }
 
             if (driverCommand == null || driverCommand.isBlank()) {
@@ -352,6 +355,11 @@ public class MyceliaDriver {
         try {
             if (trimmed.contains("{")) {
                 return Optional.of(parseJson(trimmed));
+            }
+
+            if (trimmed.startsWith("[")) {
+                // Status- oder Log-Zeile aus dem Treiber, keine Welt-Daten
+                return Optional.empty();
             }
 
             if (trimmed.matches("-?\\d+")) {

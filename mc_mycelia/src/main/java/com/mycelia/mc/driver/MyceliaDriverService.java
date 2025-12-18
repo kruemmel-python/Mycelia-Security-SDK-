@@ -131,7 +131,9 @@ public class MyceliaDriverService {
         if (stdin == null || stdout == null) {
             start();
         }
-        if (stdin == null || stdout == null) return Optional.empty();
+        if (stdin == null || stdout == null || process == null || !process.isAlive()) {
+            return Optional.empty();
+        }
 
         String json = JsonUtil.toJson(payload);
         try {
