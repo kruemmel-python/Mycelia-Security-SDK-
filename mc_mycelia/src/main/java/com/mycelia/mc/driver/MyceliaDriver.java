@@ -7,6 +7,9 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,6 +25,7 @@ import java.util.logging.Logger;
  */
 public class MyceliaDriver {
 
+    private final Plugin plugin;
     private final Logger logger;
     private final String driverCommand;
     private final Duration timeout;
@@ -32,8 +36,10 @@ public class MyceliaDriver {
     private final String defaultOreBlock;
     private final double defaultScale;
     private final int defaultSeaLevel;
+    private final Path cacheFile;
 
     public MyceliaDriver(Plugin plugin, FileConfiguration config) {
+        this.plugin = plugin;
         this.logger = plugin.getLogger();
         this.driverCommand = normalize(config.getString("driver.command", ""));
         int timeoutSeconds = config.getInt("driver.timeoutSeconds", 5);
@@ -46,6 +52,7 @@ public class MyceliaDriver {
         this.defaultOreBlock = config.getString("world.oreBlock", "AMETHYST_BLOCK");
         this.defaultScale = config.getDouble("world.scale", 0.025D);
         this.defaultSeaLevel = config.getInt("world.seaLevel", 40);
+        this.cacheFile = plugin.getDataFolder().toPath().resolve("driver_cache.txt");
     }
 
     public CompletableFuture<MyceliaWorldData> resolveWorldDataAsync(Optional<Long> explicitSeed) {
@@ -70,7 +77,7 @@ public class MyceliaDriver {
 
     private Optional<MyceliaWorldData> requestWorldDataFromDriver(Duration timeoutToUse) {
         if (driverCommand == null || driverCommand.isBlank()) {
-            return Optional.empty();
+            return readCachedPayload();
         }
 
         List<String> command = tokenize(driverCommand);
@@ -102,19 +109,24 @@ public class MyceliaDriver {
                 }
 
                 if (lines.isEmpty()) {
-                    return Optional.empty();
+                    return readCachedPayload();
                 }
 
                 String payload = lines.get(lines.size() - 1);
-                return parsePayload(payload);
+                Optional<MyceliaWorldData> parsed = parsePayload(payload);
+                parsed.ifPresent(ignored -> writeCache(payload));
+                if (parsed.isPresent()) {
+                    return parsed;
+                }
+                return readCachedPayload();
             }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
             logger.warning("Treiber-Aufruf unterbrochen: " + summarizeException(ex));
-            return Optional.empty();
+            return readCachedPayload();
         } catch (IOException ex) {
             logger.warning("Treiber-Aufruf fehlgeschlagen: " + summarizeException(ex));
-            return Optional.empty();
+            return readCachedPayload();
         }
     }
 
@@ -258,6 +270,40 @@ public class MyceliaDriver {
             return Optional.of(new MyceliaWorldData(seed, base, surface, ore, scale, seaLevel));
         }
         return Optional.empty();
+    }
+
+    private Optional<MyceliaWorldData> readCachedPayload() {
+        try {
+            if (!Files.exists(cacheFile)) {
+                return Optional.empty();
+            }
+            List<String> lines = Files.readAllLines(cacheFile, StandardCharsets.UTF_8);
+            for (int i = lines.size() - 1; i >= 0; i--) {
+                String line = lines.get(i).trim();
+                if (line.isEmpty()) {
+                    continue;
+                }
+                Optional<MyceliaWorldData> parsed = parsePayload(line);
+                if (parsed.isPresent()) {
+                    logger.info("Nutze Treiber-Cache aus " + cacheFile.toAbsolutePath());
+                    return parsed;
+                }
+            }
+        } catch (IOException ex) {
+            logger.warning("Konnte Treiber-Cache nicht lesen: " + summarizeException(ex));
+        }
+        return Optional.empty();
+    }
+
+    private void writeCache(String payload) {
+        try {
+            if (!Files.exists(cacheFile.getParent())) {
+                Files.createDirectories(cacheFile.getParent());
+            }
+            Files.writeString(cacheFile, payload + System.lineSeparator(), StandardCharsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException ex) {
+            logger.warning("Konnte Treiber-Cache nicht schreiben: " + summarizeException(ex));
+        }
     }
 
     private String normalize(String value) {
