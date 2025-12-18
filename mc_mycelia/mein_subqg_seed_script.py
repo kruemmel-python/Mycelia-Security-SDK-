@@ -97,7 +97,10 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--seed", type=int, help="Basis-Seed")
     ap.add_argument("--gpu", type=int, default=0, help="GPU-Index")
-    ap.add_argument("--timeout", type=float, default=2.0, help="Timeout")
+    # Timeout kann per Arg oder Umgebungsvariable MYCELIA_DRIVER_TIMEOUT gesetzt werden
+    env_timeout = os.environ.get("MYCELIA_DRIVER_TIMEOUT")
+    default_timeout = float(env_timeout) if env_timeout else 5.0
+    ap.add_argument("--timeout", type=float, default=default_timeout, help="Timeout")
     ap.add_argument("--unsigned", action="store_true", help="Unsigned Output")
     args = ap.parse_args()
 
