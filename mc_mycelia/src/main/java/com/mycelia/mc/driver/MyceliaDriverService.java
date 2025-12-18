@@ -90,6 +90,32 @@ public class MyceliaDriverService {
         return send(Map.of("cmd", "noise", "x", x, "z", z));
     }
 
+    public synchronized Optional<float[]> requestSymbolicAbstraction(int signalCount, float[] narrativeEmbeds, float[] weights) {
+        return send(Map.of(
+                        "cmd", "symbolic_abstract",
+                        "signalCount", signalCount,
+                        "narrativeEmbeds", narrativeEmbeds,
+                        "weights", weights))
+                .map(JsonUtil::parseFloatArray);
+    }
+
+    public synchronized Optional<float[]> requestDreamState(int size) {
+        return send(Map.of("cmd", "dream_state", "size", size))
+                .map(JsonUtil::parseFloatArray);
+    }
+
+    public synchronized Optional<Double> requestOTOC() {
+        return send(Map.of("cmd", "otoc"))
+                .map(resp -> {
+                    try {
+                        return Double.parseDouble(resp.trim());
+                    } catch (NumberFormatException e) {
+                        float[] arr = JsonUtil.parseFloatArray(resp);
+                        return arr.length > 0 ? (double) arr[0] : null;
+                    }
+                });
+    }
+
     private Optional<String> send(Map<String, Object> payload) {
         if (stdin == null || stdout == null) {
             start();

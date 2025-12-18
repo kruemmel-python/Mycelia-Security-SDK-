@@ -182,7 +182,7 @@ public class MyceliaWorldCommand implements CommandExecutor {
                 data.dna(),
                 data.fromFallback()
         );
-        MyceliaChunkGenerator generator = new MyceliaChunkGenerator(data);
+        MyceliaChunkGenerator generator = new MyceliaChunkGenerator(plugin, data);
 
         WorldCreator creator = new WorldCreator(worldName);
         creator.generator(generator);

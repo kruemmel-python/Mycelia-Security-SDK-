@@ -10,6 +10,8 @@ import com.mycelia.mc.driver.MyceliaWorldData;
 import com.mycelia.mc.generation.MyceliaBiomeProfile;
 import com.mycelia.mc.generation.MyceliaChunkGenerator;
 import com.mycelia.mc.generation.MyceliaEvolutionManager;
+import com.mycelia.mc.interaction.MyceliaNpcDialogue;
+import com.mycelia.mc.time.MyceliaTimeAnomalyHandler;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
 import org.bukkit.WorldCreator;
@@ -21,12 +23,19 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class MyceliaWorldPlugin extends JavaPlugin {
 
     private MyceliaDriver myceliaDriver;
     private MyceliaEvolutionManager evolutionManager;
     private final java.util.Map<String, MyceliaWorldData> activeWorlds = new java.util.concurrent.ConcurrentHashMap<>();
+    private final Map<String, float[]> dreamStateCache = new ConcurrentHashMap<>();
+    private volatile double otocChaosFactor = 0.5D;
+    private final Set<String> timeWarpZones = ConcurrentHashMap.newKeySet();
+    private MyceliaTimeAnomalyHandler timeAnomalyHandler;
 
     @Override
     public void onEnable() {
@@ -67,6 +76,14 @@ public class MyceliaWorldPlugin extends JavaPlugin {
         }
 
         loadPersistedWorlds();
+
+        this.timeAnomalyHandler = new MyceliaTimeAnomalyHandler(this);
+        getServer().getPluginManager().registerEvents(timeAnomalyHandler, this);
+        startDreamStateTask();
+        startOtocTask();
+        startTimeAnomalyTick();
+
+        getServer().getPluginManager().registerEvents(new MyceliaNpcDialogue(myceliaDriver), this);
 
         // Warmup: nutzt eigenes Warmup-Timeout (driver.warmupTimeoutSeconds)
         getServer().getScheduler().runTaskAsynchronously(this, () -> {
@@ -129,6 +146,7 @@ public class MyceliaWorldPlugin extends JavaPlugin {
     public void registerActiveWorld(String name, MyceliaWorldData data) {
         activeWorlds.put(name, data);
         evolutionManager.setBias(name, data.fromFallback() ? 1 : 0);
+        dreamStateCache.putIfAbsent(name, myceliaDriver.requestDreamState(256));
     }
 
     public MyceliaEvolutionManager getEvolutionManager() {
@@ -145,6 +163,8 @@ public class MyceliaWorldPlugin extends JavaPlugin {
             saveWorldMeta(worldName, data);
         } else {
             activeWorlds.remove(worldName);
+            dreamStateCache.remove(worldName);
+            timeWarpZones.removeIf(key -> key.startsWith(worldName + ":"));
         }
     }
 
@@ -195,7 +215,7 @@ public class MyceliaWorldPlugin extends JavaPlugin {
             MyceliaWorldData data = new MyceliaWorldData(seed, base, surface, ore, scale, seaLevel, biomes, dna, fallback);
 
             WorldCreator creator = new WorldCreator(worldName);
-            creator.generator(new MyceliaChunkGenerator(data));
+            creator.generator(new MyceliaChunkGenerator(this, data));
             creator.seed(seed);
 
             World world = Bukkit.createWorld(creator);
@@ -206,5 +226,58 @@ public class MyceliaWorldPlugin extends JavaPlugin {
                 getLogger().warning("[mc_mycelia] Welt konnte nicht geladen werden: " + worldName);
             }
         }
+    }
+
+    private void startDreamStateTask() {
+        long periodTicks = 20L * 60L * 10L; // alle 10 Minuten
+        getServer().getScheduler().runTaskTimerAsynchronously(this, () -> {
+            for (String worldName : activeWorlds.keySet()) {
+                float[] gradient = myceliaDriver.requestDreamState(256);
+                dreamStateCache.put(worldName, gradient);
+            }
+        }, periodTicks, periodTicks);
+    }
+
+    private void startOtocTask() {
+        long periodTicks = 20L * 60L * 5L; // alle 5 Minuten
+        getServer().getScheduler().runTaskTimerAsynchronously(this, () -> {
+            otocChaosFactor = myceliaDriver.requestGlobalOTOC();
+        }, periodTicks, periodTicks);
+    }
+
+    private void startTimeAnomalyTick() {
+        long tickInterval = 20L; // jede Sekunde
+        getServer().getScheduler().runTaskTimer(this, () -> {
+            if (timeAnomalyHandler != null) {
+                timeAnomalyHandler.tick();
+            }
+        }, tickInterval, tickInterval);
+    }
+
+    public float getDreamInfluence(String worldName, int chunkX, int chunkZ) {
+        float[] gradient = dreamStateCache.get(worldName);
+        if (gradient == null || gradient.length == 0) return 0.5f;
+        int idx = Math.floorMod(chunkX * 31 + chunkZ * 17, gradient.length);
+        return Math.min(1f, Math.max(0f, gradient[idx]));
+    }
+
+    public double getOtocChaosFactor() {
+        return otocChaosFactor;
+    }
+
+    public void addTimeWarpZone(org.bukkit.Chunk chunk) {
+        timeWarpZones.add(chunkKey(chunk));
+    }
+
+    public boolean isTimeWarpZone(org.bukkit.Chunk chunk) {
+        return timeWarpZones.contains(chunkKey(chunk));
+    }
+
+    private String chunkKey(org.bukkit.Chunk chunk) {
+        return chunk.getWorld().getName() + ":" + chunk.getX() + ":" + chunk.getZ();
+    }
+
+    public MyceliaDriver getDriver() {
+        return myceliaDriver;
     }
 }

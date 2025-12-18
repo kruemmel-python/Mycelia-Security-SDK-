@@ -1,6 +1,8 @@
 package com.mycelia.mc.generation;
 
+import com.mycelia.mc.MyceliaWorldPlugin;
 import com.mycelia.mc.driver.MyceliaWorldData;
+import com.mycelia.mc.generation.MyceliaLorePopulator;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.generator.BlockPopulator;
@@ -22,9 +24,11 @@ public class MyceliaChunkGenerator extends ChunkGenerator {
     private final Material oreMat;
     private final int seaLevel;
     private final List<MyceliaBiomeProfile> biomes;
+    private final MyceliaWorldPlugin plugin;
 
-    public MyceliaChunkGenerator(MyceliaWorldData data) {
+    public MyceliaChunkGenerator(MyceliaWorldPlugin plugin, MyceliaWorldData data) {
         this.data = data;
+        this.plugin = plugin;
         this.terrainNoise = new SimplexNoiseGenerator(data.seed());
         this.oreNoise = new SimplexNoiseGenerator(data.seed() ^ 0xCAFEEBABEL);
         this.humidityNoise = new SimplexNoiseGenerator(data.seed() ^ 0xAA12BBL);
@@ -78,8 +82,9 @@ public class MyceliaChunkGenerator extends ChunkGenerator {
     @Override
     public List<BlockPopulator> getDefaultPopulators(World world) {
         return List.of(
-                new MyceliaStructurePopulator(),
-                new MyceliaUndergroundPopulator()
+                new MyceliaStructurePopulator(plugin),
+                new MyceliaUndergroundPopulator(plugin),
+                new MyceliaLorePopulator(plugin.getDriver())
         );
     }
 

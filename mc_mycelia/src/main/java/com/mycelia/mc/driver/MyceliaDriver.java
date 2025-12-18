@@ -104,6 +104,37 @@ public class MyceliaDriver {
         });
     }
 
+    public String requestEmergentLorePhrase(org.bukkit.World world) {
+        try {
+            float[] noise = sampleSpawnField(world, 1024);
+            float archetype = average(noise, 0, noise.length / 2);
+            float energy = average(noise, noise.length / 2, noise.length);
+            Optional<float[]> symbolic = persistentService != null
+                    ? persistentService.requestSymbolicAbstraction(32, noise, noise)
+                    : Optional.empty();
+            float[] used = symbolic.orElse(noise);
+            if (used.length >= 2) {
+                archetype = used[0];
+                energy = used[1];
+            }
+            return new com.mycelia.mc.lore.LoreEngine().generateLore(archetype, energy);
+        } catch (Exception e) {
+            logger.warning("Lore-Generator Fehler: " + e.getMessage());
+            return "Wir sahen die Stille des Netzes und es war wie verblasste Erinnerung.";
+        }
+    }
+
+    public float[] requestDreamState(int size) {
+        int safeSize = Math.max(16, size);
+        Optional<float[]> response = persistentService != null ? persistentService.requestDreamState(safeSize) : Optional.empty();
+        return response.filter(arr -> arr.length > 0).orElse(generateDeterministicArray(safeSize, 0.13f));
+    }
+
+    public double requestGlobalOTOC() {
+        Optional<Double> otoc = persistentService != null ? persistentService.requestOTOC() : Optional.empty();
+        return otoc.orElse(0.5D);
+    }
+
     private Optional<MyceliaWorldData> requestWorldDataFromDriver(Duration timeout) {
         Instant start = Instant.now();
         try {
@@ -377,6 +408,39 @@ public class MyceliaDriver {
             return createFallbackData(data.seed());
         }
         return data;
+    }
+
+    private float[] sampleSpawnField(org.bukkit.World world, int count) {
+        float[] values = new float[count];
+        org.bukkit.util.noise.SimplexNoiseGenerator sampler = new org.bukkit.util.noise.SimplexNoiseGenerator(world.getSeed());
+        for (int i = 0; i < count; i++) {
+            double x = world.getSpawnLocation().getX() + (i % 32);
+            double z = world.getSpawnLocation().getZ() + (i / 32);
+            values[i] = (float) sampler.noise(x * 0.05, z * 0.05);
+        }
+        return values;
+    }
+
+    private float average(float[] arr, int from, int to) {
+        if (arr == null || arr.length == 0) return 0;
+        int end = Math.min(arr.length, to);
+        int start = Math.max(0, from);
+        double sum = 0;
+        int count = 0;
+        for (int i = start; i < end; i++) {
+            sum += arr[i];
+            count++;
+        }
+        return count == 0 ? 0 : (float) (sum / count);
+    }
+
+    private float[] generateDeterministicArray(int size, float factor) {
+        float[] arr = new float[size];
+        java.util.Random r = new java.util.Random(Double.doubleToLongBits(factor));
+        for (int i = 0; i < size; i++) {
+            arr[i] = r.nextFloat();
+        }
+        return arr;
     }
 
     private String normalize(String value) {
