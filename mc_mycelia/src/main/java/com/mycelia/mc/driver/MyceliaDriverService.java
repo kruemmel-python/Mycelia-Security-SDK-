@@ -82,8 +82,10 @@ public class MyceliaDriverService {
     }
 
     public synchronized Optional<MyceliaWorldData> requestWorld(Optional<Long> seed, MyceliaDriver driver) {
-        return send(Map.of("cmd", "world", "seed", seed.orElse(null)))
-                .flatMap(driver::parsePayload);
+        java.util.Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("cmd", "world");
+        seed.ifPresent(value -> payload.put("seed", value));
+        return send(payload).flatMap(driver::parsePayload);
     }
 
     public synchronized Optional<String> requestNoise(int x, int z) {
