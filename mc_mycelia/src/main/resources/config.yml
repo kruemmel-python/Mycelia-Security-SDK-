@@ -4,8 +4,8 @@ driver:
   #  "C:\\Users\\ralfk\\AppData\\Local\\Programs\\Python\\Python312\\python.exe D:/mc-test/paper/mein_subqg_seed_script.py"
   command: "C:\\Users\\ralfk\\AppData\\Local\\Programs\\Python\\Python312\\python.exe D:/mc-test/paper/mein_subqg_seed_script.py"
   # Für den ersten Aufruf (Kernel-Warmup) kann ein höheres Timeout nötig sein.
-  timeoutSeconds: 120
-  warmupTimeoutSeconds: 180
+  timeoutSeconds: 180
+  warmupTimeoutSeconds: 300
 
 world:
   # Empfohlene Blöcke für Mycelia-Feeling

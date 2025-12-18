@@ -99,7 +99,7 @@ def main() -> int:
     ap.add_argument("--gpu", type=int, default=0, help="GPU-Index")
     # Timeout kann per Arg oder Umgebungsvariable MYCELIA_DRIVER_TIMEOUT gesetzt werden
     env_timeout = os.environ.get("MYCELIA_DRIVER_TIMEOUT")
-    default_timeout = float(env_timeout) if env_timeout else 90.0
+    default_timeout = float(env_timeout) if env_timeout else 300.0
     ap.add_argument("--timeout", type=float, default=default_timeout, help="Timeout in Sekunden")
     ap.add_argument("--unsigned", action="store_true", help="Unsigned Output")
     args = ap.parse_args()
