@@ -8,11 +8,21 @@ import platform
 import threading
 import time
 
+FUSE = None
+Operations = object
+WINFSP_AVAILABLE = False
 try:
     from fuse import FUSE, Operations
 except (ModuleNotFoundError, OSError):  # pragma: no cover
     FUSE = None
-    Operations = object
+
+if FUSE is None and platform.system().lower().startswith("win"):
+    try:
+        from winfspy import FileSystem as WinFspFileSystem
+        from winfspy import BaseFileSystem as WinFspBaseFileSystem
+        WINFSP_AVAILABLE = True
+    except ModuleNotFoundError:  # pragma: no cover
+        WINFSP_AVAILABLE = False
 
 
 M_OK = 0
@@ -129,6 +139,59 @@ def emergency_unmount(mountpoint: str) -> None:
         os._exit(1)
 
 
+class MyceliaWinFsp(WinFspBaseFileSystem if WINFSP_AVAILABLE else object):
+    def __init__(self, bindings: MyceliaBindings, seed: int, container_path: str, mountpoint: str):
+        self.bindings = bindings
+        self.seed = seed
+        self.container_path = container_path
+        self.mountpoint = mountpoint
+        self.fd = os.open(container_path, os.O_RDONLY)
+        self._size = os.path.getsize(container_path)
+
+    def close(self):
+        if self.fd:
+            os.close(self.fd)
+            self.fd = None
+
+    def get_security_by_name(self, file_name):
+        if file_name in ("\\", "\\mycelia.bin"):
+            return 0, None
+        raise FileNotFoundError()
+
+    def get_file_info(self, file_name):
+        if file_name == "\\":
+            return dict(file_attributes=0x10, file_size=0)
+        if file_name == "\\mycelia.bin":
+            return dict(file_attributes=0x80, file_size=self._size)
+        raise FileNotFoundError()
+
+    def read_directory(self, file_name, marker):
+        if file_name != "\\":
+            raise FileNotFoundError()
+        entries = [
+            dict(file_name=".", file_attributes=0x10, file_size=0),
+            dict(file_name="..", file_attributes=0x10, file_size=0),
+            dict(file_name="mycelia.bin", file_attributes=0x80, file_size=self._size),
+        ]
+        for entry in entries:
+            if marker and entry["file_name"] <= marker:
+                continue
+            yield entry
+
+    def read(self, file_name, offset, length):
+        if file_name != "\\mycelia.bin":
+            raise FileNotFoundError()
+        logical_material = f"{file_name}:{offset}".encode("utf-8")
+        logical_id = fnv1a_64(logical_material) ^ self.seed
+        status, physical = self.bindings.map_logical(logical_id)
+        if status != M_OK:
+            emergency_unmount(self.mountpoint)
+            raise OSError(errno.EIO, "mycelia desync")
+        data = os.pread(self.fd, length, physical % self._size)
+        noise_epoch = self.bindings.get_noise_epoch()
+        return xor_stream(data, logical_id ^ self.seed ^ noise_epoch)
+
+
 def cycle_thread(bindings: MyceliaBindings, mountpoint: str) -> None:
     while True:
         status = bindings.cycle_update()
@@ -161,7 +224,7 @@ def main() -> None:
     parser.add_argument("--lib", default=os.getenv("MYCELIA_LIB_PATH"), help="Path to Mycelia shared library")
     args = parser.parse_args()
 
-    if FUSE is None:
+    if FUSE is None and not WINFSP_AVAILABLE:
         system = platform.system().lower()
         if system.startswith("win"):
             raise RuntimeError(
@@ -181,8 +244,14 @@ def main() -> None:
     thread = threading.Thread(target=cycle_thread, args=(bindings, args.mount), daemon=True)
     thread.start()
 
-    fuse_fs = MyceliaFuse(bindings, args.seed, args.container, args.mount)
-    FUSE(fuse_fs, args.mount, foreground=True, ro=True)
+    if WINFSP_AVAILABLE and platform.system().lower().startswith("win"):
+        winfsp_fs = MyceliaWinFsp(bindings, args.seed, args.container, args.mount)
+        with WinFspFileSystem(winfsp_fs, args.mount):
+            while True:
+                time.sleep(0.5)
+    else:
+        fuse_fs = MyceliaFuse(bindings, args.seed, args.container, args.mount)
+        FUSE(fuse_fs, args.mount, foreground=True, ro=True)
 
 
 if __name__ == "__main__":
