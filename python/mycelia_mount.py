@@ -254,9 +254,14 @@ def main() -> None:
 
     if WINFSP_AVAILABLE and platform.system().lower().startswith("win"):
         winfsp_fs = MyceliaWinFsp(bindings, args.seed, args.container, args.mount)
-        with WinFspFileSystem(winfsp_fs, args.mount):
-            while True:
-                time.sleep(0.5)
+        try:
+            with WinFspFileSystem(winfsp_fs, args.mount):
+                while True:
+                    time.sleep(0.5)
+        except OSError as exc:
+            raise RuntimeError(
+                "WinFSP runtime not available. Install WinFSP or run python winfsp_bootstrap.py."
+            ) from exc
     else:
         fuse_fs = MyceliaFuse(bindings, args.seed, args.container, args.mount)
         FUSE(fuse_fs, args.mount, foreground=True, ro=True)
