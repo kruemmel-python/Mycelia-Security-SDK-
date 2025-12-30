@@ -232,6 +232,9 @@ def main() -> None:
     parser.add_argument("--lib", default=os.getenv("MYCELIA_LIB_PATH"), help="Path to Mycelia shared library")
     args = parser.parse_args()
 
+    if not os.path.exists(args.container):
+        raise RuntimeError(f"Container path not found: {args.container}")
+
     if FUSE is None and not WINFSP_AVAILABLE:
         system = platform.system().lower()
         if system.startswith("win"):
