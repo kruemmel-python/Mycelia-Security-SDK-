@@ -8,7 +8,11 @@ import platform
 import threading
 import time
 
-from fuse import FUSE, Operations
+try:
+    from fuse import FUSE, Operations
+except ModuleNotFoundError:  # pragma: no cover
+    FUSE = None
+    Operations = object
 
 
 M_OK = 0
@@ -156,6 +160,14 @@ def main() -> None:
     parser.add_argument("--container", required=True, help="Container/raw device path")
     parser.add_argument("--lib", default=os.getenv("MYCELIA_LIB_PATH"), help="Path to Mycelia shared library")
     args = parser.parse_args()
+
+    if FUSE is None:
+        if platform.system().lower().startswith("win"):
+            raise RuntimeError(
+                "FUSE backend unavailable. Install WinFSP + a Python FUSE shim (e.g. winfspy) "
+                "or use a Linux/macOS environment with fusepy."
+            )
+        raise RuntimeError("FUSE backend unavailable. Install fusepy (pip install fusepy).")
 
     lib_path = resolve_library_path(args.lib)
     bindings = MyceliaBindings(lib_path)
