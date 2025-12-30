@@ -18667,6 +18667,8 @@ DLLEXPORT int mycelia_init_all(uint64_t seed) {
 #ifdef _WIN32
     if (!mycelia_fs_probe_vram() || !mycelia_fs_map_vram_to_user()) {
         mycelia_fs_close_ioctl_handle();
+    } else if (g_mycelia_vram_map) {
+        g_mycel_state.subqg_field = (float*)g_mycelia_vram_map;
     }
 #endif
 
@@ -18807,14 +18809,15 @@ DLLEXPORT int mycelia_cycle_update(void) {
 
     float variance = 0.0f;
     float error = 0.0f;
-    if (cc_get_last_kernel_error_and_variance(&error, &variance)) {
-        float measured_error = 0.0f;
-        float measured_variance = 0.0f;
-        noisectrl_measure(variance, &measured_error, &measured_variance);
-        if (measured_variance > 1.5f || measured_variance < 0.5f) {
-            mycelia_fs_fail_closed("variance anomaly");
-            return M_ERR_DESYNC;
-        }
+    if (!cc_get_last_kernel_error_and_variance(&error, &variance)) {
+        variance = 1.0f;
+    }
+    float measured_error = 0.0f;
+    float measured_variance = 0.0f;
+    noisectrl_measure(variance, &measured_error, &measured_variance);
+    if (measured_variance > 1.5f || measured_variance < 0.5f) {
+        mycelia_fs_fail_closed("variance anomaly");
+        return M_ERR_DESYNC;
     }
 
     const float rng_energy = (float)(rand() % 1000) / 1000.0f;
@@ -18830,7 +18833,9 @@ DLLEXPORT int mycelia_cycle_update(void) {
 }
 
 DLLEXPORT uint32_t mycelia_get_noise_epoch(void) {
-    return g_mycelia_noise_epoch;
+    uint32_t bits = 0;
+    memcpy(&bits, &g_noise_factor, sizeof(bits));
+    return bits;
 }
 
 // ===========================================================================
