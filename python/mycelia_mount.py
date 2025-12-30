@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 import argparse
 import ctypes
+import ctypes.util
 import errno
 import hashlib
+import importlib
+import importlib.util
 import os
 import platform
 import threading
@@ -11,18 +14,23 @@ import time
 FUSE = None
 Operations = object
 WINFSP_AVAILABLE = False
-try:
-    from fuse import FUSE, Operations
-except (ModuleNotFoundError, OSError):  # pragma: no cover
-    FUSE = None
+WinFspFileSystem = None
+WinFspBaseFileSystem = object
+
+fuse_spec = importlib.util.find_spec("fuse")
+libfuse_present = ctypes.util.find_library("fuse") or ctypes.util.find_library("fuse3")
+if fuse_spec and (libfuse_present or platform.system().lower().startswith("win")):
+    fuse_mod = importlib.import_module("fuse")
+    FUSE = fuse_mod.FUSE
+    Operations = fuse_mod.Operations
 
 if FUSE is None and platform.system().lower().startswith("win"):
-    try:
-        from winfspy import FileSystem as WinFspFileSystem
-        from winfspy import BaseFileSystem as WinFspBaseFileSystem
+    winfsp_spec = importlib.util.find_spec("winfspy")
+    if winfsp_spec:
+        winfsp_mod = importlib.import_module("winfspy")
+        WinFspFileSystem = winfsp_mod.FileSystem
+        WinFspBaseFileSystem = winfsp_mod.BaseFileSystem
         WINFSP_AVAILABLE = True
-    except ModuleNotFoundError:  # pragma: no cover
-        WINFSP_AVAILABLE = False
 
 
 M_OK = 0
