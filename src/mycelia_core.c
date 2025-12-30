@@ -3268,6 +3268,7 @@ unsigned int get_compute_unit_count(int gpu_index);
 int zero_gpu_buffer(int gpu_index, void* gpu_buffer_handle, size_t size_bytes);
 static cl_int get_reduction_params_helper(size_t* lws_out, size_t* local_mem_bytes_out);
 static void release_subqg_resources(void);
+static void release_mycel_fs_resources(void);
 static void release_quantum_program_objects(void);
 static void release_quantum_resources(void);
 static cl_int enqueue_kernel_with_metrics(cl_kernel kernel,
