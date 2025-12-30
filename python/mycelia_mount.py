@@ -37,6 +37,8 @@ class MyceliaBindings:
         self.lib.mycelia_fs_map_logical_to_physical.restype = ctypes.c_int
         self.lib.mycelia_cycle_update.argtypes = []
         self.lib.mycelia_cycle_update.restype = ctypes.c_int
+        self.lib.mycelia_get_noise_epoch.argtypes = []
+        self.lib.mycelia_get_noise_epoch.restype = ctypes.c_uint32
 
     def init_all(self, seed: int) -> int:
         return self.lib.mycelia_init_all(ctypes.c_uint64(seed))
@@ -51,6 +53,9 @@ class MyceliaBindings:
 
     def cycle_update(self) -> int:
         return self.lib.mycelia_cycle_update()
+
+    def get_noise_epoch(self) -> int:
+        return int(self.lib.mycelia_get_noise_epoch())
 
 
 class MyceliaFuse(Operations):
@@ -96,7 +101,8 @@ class MyceliaFuse(Operations):
             raise OSError(errno.EIO, "mycelia desync")
 
         data = os.pread(self.fd, size, physical % os.path.getsize(self.container_path))
-        return xor_stream(data, logical_id ^ self.seed)
+        noise_epoch = self.bindings.get_noise_epoch()
+        return xor_stream(data, logical_id ^ self.seed ^ noise_epoch)
 
 
 def xor_stream(data: bytes, seed: int) -> bytes:

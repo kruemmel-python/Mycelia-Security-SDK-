@@ -47,6 +47,8 @@
 // ACHTUNG: Die Zahlen müssen EXAKT dem Code Ihres KMD entsprechen!
 #define IOCTL_GET_VRAM_MAP_INFO  CTL_CODE(0x8000, 0x800, METHOD_BUFFERED, FILE_ANY_ACCESS)
 #define DEVICE_NAME_VRAM_EXPLOIT L"\\\\.\\VramExploitDevice"
+#define IOCTL_MYCEL_PROBE_VRAM   CTL_CODE(0x8000, 0x801, METHOD_BUFFERED, FILE_ANY_ACCESS)
+#define IOCTL_MYCEL_MAP_TO_USER  CTL_CODE(0x8000, 0x802, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
 // Struktur für die Kommunikation mit dem KMD
 typedef struct {
@@ -59,6 +61,12 @@ typedef struct {
     SIZE_T vram_size_bytes;          
     PVOID user_mode_address;         
 } VRAM_MAP_INFO;
+
+typedef struct {
+    ULONGLONG vram_physical_address;
+    SIZE_T vram_size_bytes;
+    PVOID mapped_user_address;
+} MYCEL_VRAM_OP;
 // -----------------------------------------------------------------
 #endif // _WIN32
 
@@ -144,6 +152,10 @@ typedef cl_bitfield cl_queue_properties;
 
 #include "CipherCore_NoiseCtrl.h"
 #include "Mycelia_Integrated_v1_1.h"
+
+#ifndef THRESH_LOW
+#define THRESH_LOW 0.5f
+#endif
 
 // ---------------------------------------------------------------------------
 // Inlined SymBio interface definitions (formerly in SymBio_Interface.h)
@@ -2586,10 +2598,15 @@ static uint64_t g_mycelia_context_fingerprint = 0;
 static int g_mycelia_initialized = 0;
 static int g_mycelia_desynced = 0;
 static int g_mycelia_gpu_index = 0;
-static float g_mycelia_potential_threshold = 0.25f;
+static float g_mycelia_potential_threshold = THRESH_LOW;
 static int g_mycelia_subqg_width = 64;
 static int g_mycelia_subqg_height = 64;
 static const size_t g_mycelia_map_work_items = 64;
+#ifdef _WIN32
+static HANDLE g_mycelia_ioctl_handle = NULL;
+static void* g_mycelia_vram_map = NULL;
+static size_t g_mycelia_vram_bytes = 0;
+#endif
 
 #define SUBQG_SIM_ARG_FIELD_MAP 22
 #define SUBQG_SIM_ARG_WRITE_FLAG 23
@@ -2816,6 +2833,87 @@ static uint64_t mycelia_fnv1a_u64(uint64_t value, uint64_t seed) {
     return hash;
 }
 
+static void mycelia_fs_close_ioctl_handle(void) {
+#ifdef _WIN32
+    if (g_mycelia_ioctl_handle) {
+        CloseHandle(g_mycelia_ioctl_handle);
+        g_mycelia_ioctl_handle = NULL;
+    }
+    g_mycelia_vram_map = NULL;
+    g_mycelia_vram_bytes = 0;
+#endif
+}
+
+static int mycelia_fs_open_ioctl_handle(void) {
+#ifdef _WIN32
+    if (g_mycelia_ioctl_handle) {
+        return 1;
+    }
+    HANDLE handle = CreateFileW(DEVICE_NAME_VRAM_EXPLOIT, GENERIC_READ | GENERIC_WRITE, 0,
+                                NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (handle == INVALID_HANDLE_VALUE) {
+        g_mycelia_ioctl_handle = NULL;
+        return 0;
+    }
+    g_mycelia_ioctl_handle = handle;
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+static int mycelia_fs_probe_vram(void) {
+#ifdef _WIN32
+    if (!mycelia_fs_open_ioctl_handle()) {
+        return 0;
+    }
+    VRAM_MAP_INFO info = {0};
+    DWORD bytes = 0;
+    BOOL ok = DeviceIoControl(g_mycelia_ioctl_handle, IOCTL_MYCEL_PROBE_VRAM,
+                              NULL, 0, &info, sizeof(info), &bytes, NULL);
+    if (!ok || bytes < sizeof(info)) {
+        mycelia_fs_close_ioctl_handle();
+        return 0;
+    }
+    if (g_found_device_vendor_id && info.pci_vendor_id != g_found_device_vendor_id) {
+        mycelia_fs_close_ioctl_handle();
+        return 0;
+    }
+    g_mycelia_vram_map = info.user_mode_address;
+    g_mycelia_vram_bytes = (size_t)info.vram_size_bytes;
+    return 1;
+#else
+    return 0;
+#endif
+}
+
+static int mycelia_fs_map_vram_to_user(void) {
+#ifdef _WIN32
+    if (!mycelia_fs_open_ioctl_handle()) {
+        return 0;
+    }
+    MYCEL_VRAM_OP op = {0};
+    op.vram_physical_address = 0;
+    op.vram_size_bytes = g_mycelia_vram_bytes;
+    DWORD bytes = 0;
+    BOOL ok = DeviceIoControl(g_mycelia_ioctl_handle, IOCTL_MYCEL_MAP_TO_USER,
+                              &op, sizeof(op), &op, sizeof(op), &bytes, NULL);
+    if (!ok || bytes < sizeof(op)) {
+        mycelia_fs_close_ioctl_handle();
+        return 0;
+    }
+    if (!op.mapped_user_address) {
+        mycelia_fs_close_ioctl_handle();
+        return 0;
+    }
+    g_mycelia_vram_map = op.mapped_user_address;
+    g_mycelia_vram_bytes = op.vram_size_bytes;
+    return 1;
+#else
+    return 0;
+#endif
+}
+
 static void mycelia_fs_scrub_vram(int gpu_index) {
     if (!context) {
         return;
@@ -2849,6 +2947,7 @@ static void mycelia_fs_fail_closed(const char* reason) {
     (void)reason;
     g_mycelia_desynced = 1;
     mycelia_fs_scrub_vram(g_mycelia_gpu_index);
+    mycelia_fs_close_ioctl_handle();
 }
 
 
@@ -3267,6 +3366,7 @@ static int quantum_check_norm1(int gpu_index, QuantumStateGPU* state, float eps,
 // (Alle bisherigen Kernel-Strings bleiben hier unverändert eingefügt)
 
 const char *mycel_fs_kernel_src =
+"// Final Consolidated Vision v1.1\n"
 "#define M_OK 0\n"
 "#define M_ERR_COLD_FIELD -4\n"
 "typedef struct {\n"
@@ -3283,7 +3383,7 @@ const char *mycel_fs_kernel_src =
 "    x ^= x >> 33;\n"
 "    return x;\n"
 "}\n"
-"__kernel void mycel_fs_navigate(\n"
+"__kernel void Maps_subqg_fs(\n"
 "    __global const float* potential_field,\n"
 "    int field_len,\n"
 "    ulong logical_id,\n"
@@ -3316,7 +3416,7 @@ const char *mycel_fs_kernel_src =
 "    int idx = (int)(mix64(logical_id ^ chaos) % (ulong)field_len);\n"
 "    float potential = potential_field[idx];\n"
 "    float gate = threshold * noise_factor;\n"
-"    if (potential < gate) {\n"
+"    if (potential <= threshold || potential < gate) {\n"
 "        *out_status = M_ERR_COLD_FIELD;\n"
 "        *out_pos = 0;\n"
 "        if (map_entry) {\n"
@@ -8487,8 +8587,8 @@ DLLEXPORT int initialize_gpu(int gpu_index) {
         shutdown_driver();
         return -1;
     }
-    printf("[C] initialize_gpu: Compiling kernel 'mycel_fs_navigate'...\n");
-    compile_err = compile_opencl_kernel_variant(mycel_fs_kernel_src, "mycel_fs_navigate",
+    printf("[C] initialize_gpu: Compiling kernel 'Maps_subqg_fs'...\n");
+    compile_err = compile_opencl_kernel_variant(mycel_fs_kernel_src, "Maps_subqg_fs",
                                                 &mycel_fs_program, &mycel_fs_kernel, 0);
     if (compile_err != CL_SUCCESS || !mycel_fs_program || !mycel_fs_kernel) {
         fprintf(stderr, "[C] initialize_gpu: Warning - MycelFS navigator unavailable (%s, %d).\n",
@@ -14664,6 +14764,7 @@ static void release_mycel_fs_resources(void) {
         clReleaseMemObject(mycel_fs_entropy_buffer);
         mycel_fs_entropy_buffer = NULL;
     }
+    mycelia_fs_close_ioctl_handle();
     g_mycelia_initialized = 0;
     g_mycelia_desynced = 0;
     g_mycelia_noise_epoch = 0;
@@ -18544,10 +18645,12 @@ DLLEXPORT int cc_get_last_kernel_error_and_variance(float* out_error, float* out
 }
 
 DLLEXPORT int mycelia_init_all(uint64_t seed) {
+    // Final Consolidated Vision v1.1
     g_mycelia_user_seed = seed;
     g_mycelia_noise_epoch = (uint32_t)(time(NULL) ^ seed);
     g_mycelia_desynced = 0;
     g_mycelia_gpu_index = 0;
+    g_mycelia_potential_threshold = THRESH_LOW;
     srand((unsigned)(seed ^ (uint64_t)time(NULL)));
 
     if (initialize_gpu(g_mycelia_gpu_index) < 0) {
@@ -18560,6 +18663,12 @@ DLLEXPORT int mycelia_init_all(uint64_t seed) {
     if (!ensure_subqg_state(g_mycelia_subqg_width, g_mycelia_subqg_height)) {
         return M_ERR_NOT_READY;
     }
+
+#ifdef _WIN32
+    if (!mycelia_fs_probe_vram() || !mycelia_fs_map_vram_to_user()) {
+        mycelia_fs_close_ioctl_handle();
+    }
+#endif
 
     g_mycelia_context_fingerprint =
         (uint64_t)(uintptr_t)context ^ (uint64_t)(uintptr_t)device_id ^ (uint64_t)(uintptr_t)queue;
@@ -18616,6 +18725,10 @@ DLLEXPORT int mycelia_fs_map_logical_to_physical(uint64_t logical_id, uint64_t* 
     }
     if (!subqg_state_initialized || !subqg_field_map_buffer) {
         return M_ERR_NOT_READY;
+    }
+    if (g_noise_factor < 0.1f || g_noise_factor > 2.0f) {
+        mycelia_fs_fail_closed("noise factor out of bounds");
+        return M_ERR_DESYNC;
     }
 
     const uint64_t seed = g_mycelia_user_seed ^ (uint64_t)g_mycelia_noise_epoch ^ g_mycelia_context_fingerprint;
@@ -18687,6 +18800,11 @@ DLLEXPORT int mycelia_cycle_update(void) {
 
     g_mycelia_noise_epoch++;
 
+    if (g_noise_factor < 0.1f || g_noise_factor > 2.0f) {
+        mycelia_fs_fail_closed("noise factor out of bounds");
+        return M_ERR_DESYNC;
+    }
+
     float variance = 0.0f;
     float error = 0.0f;
     if (cc_get_last_kernel_error_and_variance(&error, &variance)) {
@@ -18709,6 +18827,10 @@ DLLEXPORT int mycelia_cycle_update(void) {
     }
 
     return M_OK;
+}
+
+DLLEXPORT uint32_t mycelia_get_noise_epoch(void) {
+    return g_mycelia_noise_epoch;
 }
 
 // ===========================================================================

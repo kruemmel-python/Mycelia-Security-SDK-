@@ -40,6 +40,9 @@ int mycelia_fs_map_logical_to_physical(uint64_t logical_id, uint64_t* out_physic
 // Zyklus-Update: hält das Myzel am Leben (SubQG-Wachstum).
 int mycelia_cycle_update(void);
 
+// Liefert die aktuelle Noise-Epoche des Myzels.
+uint32_t mycelia_get_noise_epoch(void);
+
 #ifdef __cplusplus
 }
 #endif
