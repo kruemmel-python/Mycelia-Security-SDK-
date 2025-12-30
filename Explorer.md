@@ -33,12 +33,7 @@ echo "Mycelia Payload" > payload.txt
 Das Vault-Skript ist interaktiv (bzw. erwartete Funktionseinsteiger), aber du kannst es direkt per Python ausführen, indem du eine kleine Ein-Zeilen-Ausführung nutzt:
 
 ```powershell
-py - << 'PY'
-from python.mycelia_vault_v4 import MyceliaVaultV4
-
-vault = MyceliaVaultV4()
-vault.encrypt("payload.txt", "mycelia_container.bin")
-PY
+py -c "from mycelia_vault_v4 import MyceliaVaultV4; vault = MyceliaVaultV4(); vault.encrypt('payload.txt', 'mycelia_container.bin')"
 ```
 
 Das erzeugt eine Datei `mycelia_container.bin` im aktuellen Verzeichnis.
