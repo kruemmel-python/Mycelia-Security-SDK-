@@ -272,3 +272,5 @@ if __name__ == "__main__":
         main()
     except RuntimeError as exc:
         raise SystemExit(str(exc)) from exc
+    except Exception as exc:
+        raise SystemExit(f"Unhandled error: {exc}") from exc
