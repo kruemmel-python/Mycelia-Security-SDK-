@@ -143,6 +143,7 @@ typedef cl_bitfield cl_queue_properties;
 #endif
 
 #include "CipherCore_NoiseCtrl.h"
+#include "Mycelia_Integrated_v1_1.h"
 
 // ---------------------------------------------------------------------------
 // Inlined SymBio interface definitions (formerly in SymBio_Interface.h)
@@ -1945,6 +1946,13 @@ cl_kernel render_kernel_img = NULL;
 cl_kernel render_kernel_buf = NULL;
 cl_kernel render_debug_kernel = NULL;
 
+cl_program mycel_fs_program = NULL;
+cl_kernel mycel_fs_kernel = NULL;
+cl_mem mycel_fs_map_entry_buffer = NULL;
+cl_mem mycel_fs_physical_buffer = NULL;
+cl_mem mycel_fs_status_buffer = NULL;
+cl_mem mycel_fs_entropy_buffer = NULL;
+
 cl_program brain_program = NULL;
 cl_kernel brain_bridge_kernel = NULL;
 
@@ -2572,6 +2580,17 @@ static int subqg_field_map_elements = 0;
 static int subqg_width = 0;
 static int subqg_height = 0;
 
+static uint64_t g_mycelia_user_seed = 0;
+static uint32_t g_mycelia_noise_epoch = 0;
+static uint64_t g_mycelia_context_fingerprint = 0;
+static int g_mycelia_initialized = 0;
+static int g_mycelia_desynced = 0;
+static int g_mycelia_gpu_index = 0;
+static float g_mycelia_potential_threshold = 0.25f;
+static int g_mycelia_subqg_width = 64;
+static int g_mycelia_subqg_height = 64;
+static const size_t g_mycelia_map_work_items = 64;
+
 #define SUBQG_SIM_ARG_FIELD_MAP 22
 #define SUBQG_SIM_ARG_WRITE_FLAG 23
 
@@ -2780,6 +2799,56 @@ static inline float cc_log_sum_exp_three(float a, float b, float c) {
     if (b != -INFINITY) { sum += expf(b - max_val); }
     if (c != -INFINITY) { sum += expf(c - max_val); }
     return max_val + logf(sum);
+}
+
+static uint64_t mycelia_fnv1a_u64(uint64_t value, uint64_t seed) {
+    const uint64_t fnv_offset = 14695981039346656037ULL;
+    const uint64_t fnv_prime = 1099511628211ULL;
+    uint64_t hash = fnv_offset;
+    for (int i = 0; i < 8; ++i) {
+        hash ^= (value >> (i * 8)) & 0xffU;
+        hash *= fnv_prime;
+    }
+    for (int i = 0; i < 8; ++i) {
+        hash ^= (seed >> (i * 8)) & 0xffU;
+        hash *= fnv_prime;
+    }
+    return hash;
+}
+
+static void mycelia_fs_scrub_vram(int gpu_index) {
+    if (!context) {
+        return;
+    }
+    cl_command_queue active_queue = cc_get_slot_queue(gpu_index, 0, NULL);
+    if (!active_queue) {
+        return;
+    }
+    const cl_ulong zero_u64 = 0;
+    const cl_int zero_i32 = 0;
+    if (mycel_fs_map_entry_buffer) {
+        clEnqueueFillBuffer(active_queue, mycel_fs_map_entry_buffer, &zero_u64, sizeof(zero_u64), 0,
+                            sizeof(MycelMapEntry), 0, NULL, NULL);
+    }
+    if (mycel_fs_physical_buffer) {
+        clEnqueueFillBuffer(active_queue, mycel_fs_physical_buffer, &zero_u64, sizeof(zero_u64), 0,
+                            sizeof(uint64_t), 0, NULL, NULL);
+    }
+    if (mycel_fs_status_buffer) {
+        clEnqueueFillBuffer(active_queue, mycel_fs_status_buffer, &zero_i32, sizeof(zero_i32), 0,
+                            sizeof(int), 0, NULL, NULL);
+    }
+    if (mycel_fs_entropy_buffer) {
+        clEnqueueFillBuffer(active_queue, mycel_fs_entropy_buffer, &zero_u64, sizeof(zero_u64), 0,
+                            sizeof(cl_ulong), 0, NULL, NULL);
+    }
+    clFinish(active_queue);
+}
+
+static void mycelia_fs_fail_closed(const char* reason) {
+    (void)reason;
+    g_mycelia_desynced = 1;
+    mycelia_fs_scrub_vram(g_mycelia_gpu_index);
 }
 
 
@@ -3196,6 +3265,80 @@ static int quantum_check_norm1(int gpu_index, QuantumStateGPU* state, float eps,
 
 // --- Kernel Source Code Strings ---
 // (Alle bisherigen Kernel-Strings bleiben hier unverändert eingefügt)
+
+const char *mycel_fs_kernel_src =
+"#define M_OK 0\n"
+"#define M_ERR_COLD_FIELD -4\n"
+"typedef struct {\n"
+"    ulong logical_id;\n"
+"    ulong physical_pos;\n"
+"    float local_potential;\n"
+"    uint noise_epoch;\n"
+"} MycelMapEntry;\n"
+"static inline ulong mix64(ulong x) {\n"
+"    x ^= x >> 33;\n"
+"    x *= 0xff51afd7ed558ccdUL;\n"
+"    x ^= x >> 33;\n"
+"    x *= 0xc4ceb9fe1a85ec53UL;\n"
+"    x ^= x >> 33;\n"
+"    return x;\n"
+"}\n"
+"__kernel void mycel_fs_navigate(\n"
+"    __global const float* potential_field,\n"
+"    int field_len,\n"
+"    ulong logical_id,\n"
+"    ulong seed,\n"
+"    uint noise_epoch,\n"
+"    float threshold,\n"
+"    float noise_factor,\n"
+"    __global MycelMapEntry* map_entry,\n"
+"    __global ulong* out_pos,\n"
+"    __global int* out_status,\n"
+"    __global ulong* entropy)\n"
+"{\n"
+"    int gid = get_global_id(0);\n"
+"    if (field_len <= 0) {\n"
+"        if (gid == 0) {\n"
+"            *out_status = M_ERR_COLD_FIELD;\n"
+"            *out_pos = 0;\n"
+"        }\n"
+"        return;\n"
+"    }\n"
+"    ulong salt = mix64(seed ^ (ulong)gid ^ logical_id);\n"
+"    if (entropy) {\n"
+"        entropy[0] = entropy[0] ^ salt;\n"
+"    }\n"
+"    barrier(CLK_GLOBAL_MEM_FENCE);\n"
+"    if (gid != 0) {\n"
+"        return;\n"
+"    }\n"
+"    ulong chaos = entropy ? entropy[0] : salt;\n"
+"    int idx = (int)(mix64(logical_id ^ chaos) % (ulong)field_len);\n"
+"    float potential = potential_field[idx];\n"
+"    float gate = threshold * noise_factor;\n"
+"    if (potential < gate) {\n"
+"        *out_status = M_ERR_COLD_FIELD;\n"
+"        *out_pos = 0;\n"
+"        if (map_entry) {\n"
+"            map_entry[0].logical_id = logical_id;\n"
+"            map_entry[0].physical_pos = 0;\n"
+"            map_entry[0].local_potential = potential;\n"
+"            map_entry[0].noise_epoch = noise_epoch;\n"
+"        }\n"
+"        return;\n"
+"    }\n"
+"    ulong jump = (ulong)(noise_factor * 1048573.0f) + 1UL;\n"
+"    ulong phys = mix64(logical_id + chaos) ^ (jump * (ulong)(noise_epoch + 1));\n"
+"    phys ^= (ulong)(potential * 1000003.0f);\n"
+"    *out_pos = phys;\n"
+"    *out_status = M_OK;\n"
+"    if (map_entry) {\n"
+"        map_entry[0].logical_id = logical_id;\n"
+"        map_entry[0].physical_pos = phys;\n"
+"        map_entry[0].local_potential = potential;\n"
+"        map_entry[0].noise_epoch = noise_epoch;\n"
+"    }\n"
+"}\n";
 
 const char *render_kernel_src =
 "// ----------------------------------------------------------------\n"
@@ -7274,6 +7417,7 @@ void shutdown_driver() {
     RELEASE_KERNEL(mycel_diffuse_kernel);
     RELEASE_KERNEL(mycel_nutrient_kernel);
     RELEASE_KERNEL(mycel_colony_kernel);
+    RELEASE_KERNEL(mycel_fs_kernel);
     RELEASE_KERNEL(linguistic_hypothesis_generate_kernel);
     RELEASE_KERNEL(linguistic_pheromone_reinforce_kernel);
     RELEASE_KERNEL(brain_bridge_kernel);
@@ -7415,6 +7559,7 @@ void shutdown_driver() {
     RELEASE_PROGRAM(linguistic_program);
     RELEASE_PROGRAM(brain_program);
     RELEASE_PROGRAM(render_program);
+    RELEASE_PROGRAM(mycel_fs_program);
     RELEASE_PROGRAM(sqse_program);
     RELEASE_PROGRAM(quantum_program);
     #undef RELEASE_PROGRAM
@@ -7422,6 +7567,7 @@ void shutdown_driver() {
 
     // Release SubQG buffers/state
     release_subqg_resources();
+    release_mycel_fs_resources();
     release_quantum_resources();
 
     if (shadow_self_generation_counter) {
@@ -8340,6 +8486,18 @@ DLLEXPORT int initialize_gpu(int gpu_index) {
                 clGetErrorString(mycel_err), mycel_err);
         shutdown_driver();
         return -1;
+    }
+    printf("[C] initialize_gpu: Compiling kernel 'mycel_fs_navigate'...\n");
+    compile_err = compile_opencl_kernel_variant(mycel_fs_kernel_src, "mycel_fs_navigate",
+                                                &mycel_fs_program, &mycel_fs_kernel, 0);
+    if (compile_err != CL_SUCCESS || !mycel_fs_program || !mycel_fs_kernel) {
+        fprintf(stderr, "[C] initialize_gpu: Warning - MycelFS navigator unavailable (%s, %d).\n",
+                clGetErrorString(compile_err), compile_err);
+        if (mycel_fs_program) {
+            clReleaseProgram(mycel_fs_program);
+        }
+        mycel_fs_program = NULL;
+        mycel_fs_kernel = NULL;
     }
     printf("[C] initialize_gpu: Compiling render kernel...\n");
     compile_err = compile_opencl_kernel_variant(render_kernel_src, "render_frame_img",
@@ -14003,6 +14161,7 @@ cleanup:
  */
 DLLEXPORT void shutdown_gpu(int gpu_index) {
     printf("[C] shutdown_gpu: Received shutdown request for GPU index %d. Shutting down global OpenCL resources.\n", gpu_index);
+    mycelia_fs_scrub_vram(gpu_index);
     shutdown_driver();
 }
 
@@ -14486,6 +14645,28 @@ static void release_subqg_resources(void) {
     genetic_agent_stride_cached = 0;
     genetic_agent_count_cached = 0;
     social_hebbian_weights_bytes = 0;
+}
+
+static void release_mycel_fs_resources(void) {
+    if (mycel_fs_map_entry_buffer) {
+        clReleaseMemObject(mycel_fs_map_entry_buffer);
+        mycel_fs_map_entry_buffer = NULL;
+    }
+    if (mycel_fs_physical_buffer) {
+        clReleaseMemObject(mycel_fs_physical_buffer);
+        mycel_fs_physical_buffer = NULL;
+    }
+    if (mycel_fs_status_buffer) {
+        clReleaseMemObject(mycel_fs_status_buffer);
+        mycel_fs_status_buffer = NULL;
+    }
+    if (mycel_fs_entropy_buffer) {
+        clReleaseMemObject(mycel_fs_entropy_buffer);
+        mycel_fs_entropy_buffer = NULL;
+    }
+    g_mycelia_initialized = 0;
+    g_mycelia_desynced = 0;
+    g_mycelia_noise_epoch = 0;
 }
 
 static void release_quantum_program_objects(void) {
@@ -18360,6 +18541,174 @@ DLLEXPORT int cc_get_last_kernel_error_and_variance(float* out_error, float* out
     *out_error = g_last_metrics.error;
     *out_variance = g_last_metrics.variance;
     return 1;
+}
+
+DLLEXPORT int mycelia_init_all(uint64_t seed) {
+    g_mycelia_user_seed = seed;
+    g_mycelia_noise_epoch = (uint32_t)(time(NULL) ^ seed);
+    g_mycelia_desynced = 0;
+    g_mycelia_gpu_index = 0;
+    srand((unsigned)(seed ^ (uint64_t)time(NULL)));
+
+    if (initialize_gpu(g_mycelia_gpu_index) < 0) {
+        return M_ERR_NO_GPU;
+    }
+    if (!mycel_fs_kernel) {
+        return M_ERR_OPENCL;
+    }
+
+    if (!ensure_subqg_state(g_mycelia_subqg_width, g_mycelia_subqg_height)) {
+        return M_ERR_NOT_READY;
+    }
+
+    g_mycelia_context_fingerprint =
+        (uint64_t)(uintptr_t)context ^ (uint64_t)(uintptr_t)device_id ^ (uint64_t)(uintptr_t)queue;
+
+    cl_int err = CL_SUCCESS;
+    if (!mycel_fs_map_entry_buffer) {
+        mycel_fs_map_entry_buffer = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(MycelMapEntry), NULL, &err);
+        if (!mycel_fs_map_entry_buffer || err != CL_SUCCESS) {
+            return M_ERR_OPENCL;
+        }
+    }
+    if (!mycel_fs_physical_buffer) {
+        mycel_fs_physical_buffer = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(uint64_t), NULL, &err);
+        if (!mycel_fs_physical_buffer || err != CL_SUCCESS) {
+            return M_ERR_OPENCL;
+        }
+    }
+    if (!mycel_fs_status_buffer) {
+        mycel_fs_status_buffer = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(int), NULL, &err);
+        if (!mycel_fs_status_buffer || err != CL_SUCCESS) {
+            return M_ERR_OPENCL;
+        }
+    }
+    if (!mycel_fs_entropy_buffer) {
+        mycel_fs_entropy_buffer = clCreateBuffer(context, CL_MEM_READ_WRITE, sizeof(cl_ulong), NULL, &err);
+        if (!mycel_fs_entropy_buffer || err != CL_SUCCESS) {
+            return M_ERR_OPENCL;
+        }
+    }
+
+    cl_command_queue active_queue = cc_get_slot_queue(g_mycelia_gpu_index, 0, NULL);
+    if (!active_queue) {
+        return M_ERR_OPENCL;
+    }
+    const cl_ulong seed_entropy = (cl_ulong)(seed ^ g_mycelia_context_fingerprint);
+    err = clEnqueueWriteBuffer(active_queue, mycel_fs_entropy_buffer, CL_TRUE, 0,
+                               sizeof(seed_entropy), &seed_entropy, 0, NULL, NULL);
+    if (err != CL_SUCCESS) {
+        return M_ERR_OPENCL;
+    }
+    g_mycelia_initialized = 1;
+    return M_OK;
+}
+
+DLLEXPORT int mycelia_fs_map_logical_to_physical(uint64_t logical_id, uint64_t* out_physical_pos) {
+    if (!out_physical_pos) {
+        return M_ERR_UNKNOWN;
+    }
+    if (!g_mycelia_initialized || !mycel_fs_kernel) {
+        return M_ERR_NOT_READY;
+    }
+    if (g_mycelia_desynced) {
+        return M_ERR_DESYNC;
+    }
+    if (!subqg_state_initialized || !subqg_field_map_buffer) {
+        return M_ERR_NOT_READY;
+    }
+
+    const uint64_t seed = g_mycelia_user_seed ^ (uint64_t)g_mycelia_noise_epoch ^ g_mycelia_context_fingerprint;
+    const uint64_t hashed_id = mycelia_fnv1a_u64(logical_id, seed);
+    const float noise_factor = get_noise_factor();
+
+    // Myzel-Wachstum: Seed-Mischung bringt das Myzel in Gang.
+    // Nährstoffwanderung: Hash verteilt die Sporen über das SubQG-Feld.
+    // Fragment-Sporulation: Jump-Weite lässt Fragmente nicht-linear auskeimen.
+    const uint64_t jump = (uint64_t)(noise_factor * 4096.0f) + 1ULL;
+    const uint64_t logical_mix = hashed_id ^ (seed + jump * (uint64_t)(g_mycelia_noise_epoch + 1));
+
+    cl_command_queue active_queue = cc_get_slot_queue(g_mycelia_gpu_index, 0, NULL);
+    if (!active_queue) {
+        return M_ERR_OPENCL;
+    }
+
+    cl_int err = CL_SUCCESS;
+    int field_len = subqg_field_map_elements;
+    float threshold = g_mycelia_potential_threshold;
+    err |= clSetKernelArg(mycel_fs_kernel, 0, sizeof(cl_mem), &subqg_field_map_buffer);
+    err |= clSetKernelArg(mycel_fs_kernel, 1, sizeof(int), &field_len);
+    err |= clSetKernelArg(mycel_fs_kernel, 2, sizeof(cl_ulong), &logical_mix);
+    err |= clSetKernelArg(mycel_fs_kernel, 3, sizeof(cl_ulong), &seed);
+    err |= clSetKernelArg(mycel_fs_kernel, 4, sizeof(cl_uint), &g_mycelia_noise_epoch);
+    err |= clSetKernelArg(mycel_fs_kernel, 5, sizeof(float), &threshold);
+    err |= clSetKernelArg(mycel_fs_kernel, 6, sizeof(float), &noise_factor);
+    err |= clSetKernelArg(mycel_fs_kernel, 7, sizeof(cl_mem), &mycel_fs_map_entry_buffer);
+    err |= clSetKernelArg(mycel_fs_kernel, 8, sizeof(cl_mem), &mycel_fs_physical_buffer);
+    err |= clSetKernelArg(mycel_fs_kernel, 9, sizeof(cl_mem), &mycel_fs_status_buffer);
+    err |= clSetKernelArg(mycel_fs_kernel, 10, sizeof(cl_mem), &mycel_fs_entropy_buffer);
+    if (err != CL_SUCCESS) {
+        return M_ERR_OPENCL;
+    }
+
+    size_t global_work = g_mycelia_map_work_items;
+    err = clEnqueueNDRangeKernel(active_queue, mycel_fs_kernel, 1, NULL, &global_work, NULL, 0, NULL, NULL);
+    if (err != CL_SUCCESS) {
+        return M_ERR_OPENCL;
+    }
+
+    int status = M_ERR_UNKNOWN;
+    err = clEnqueueReadBuffer(active_queue, mycel_fs_status_buffer, CL_TRUE, 0, sizeof(status), &status, 0, NULL, NULL);
+    if (err != CL_SUCCESS) {
+        return M_ERR_OPENCL;
+    }
+    if (status != M_OK) {
+        return status;
+    }
+
+    uint64_t physical_pos = 0;
+    err = clEnqueueReadBuffer(active_queue, mycel_fs_physical_buffer, CL_TRUE, 0,
+                              sizeof(physical_pos), &physical_pos, 0, NULL, NULL);
+    if (err != CL_SUCCESS) {
+        return M_ERR_OPENCL;
+    }
+
+    *out_physical_pos = physical_pos;
+    return M_OK;
+}
+
+DLLEXPORT int mycelia_cycle_update(void) {
+    if (!g_mycelia_initialized) {
+        return M_ERR_NOT_READY;
+    }
+    if (g_mycelia_desynced) {
+        return M_ERR_DESYNC;
+    }
+
+    g_mycelia_noise_epoch++;
+
+    float variance = 0.0f;
+    float error = 0.0f;
+    if (cc_get_last_kernel_error_and_variance(&error, &variance)) {
+        float measured_error = 0.0f;
+        float measured_variance = 0.0f;
+        noisectrl_measure(variance, &measured_error, &measured_variance);
+        if (measured_variance > 1.5f || measured_variance < 0.5f) {
+            mycelia_fs_fail_closed("variance anomaly");
+            return M_ERR_DESYNC;
+        }
+    }
+
+    const float rng_energy = (float)(rand() % 1000) / 1000.0f;
+    const float rng_phase = (float)(rand() % 1000) / 1000.0f;
+    const float rng_spin = (float)(rand() % 1000) / 1000.0f;
+    if (!subqg_simulation_step(g_mycelia_gpu_index, rng_energy, rng_phase, rng_spin,
+                               NULL, NULL, NULL, NULL, NULL, NULL, NULL, 0)) {
+        mycelia_fs_fail_closed("subqg cycle failure");
+        return M_ERR_DESYNC;
+    }
+
+    return M_OK;
 }
 
 // ===========================================================================
