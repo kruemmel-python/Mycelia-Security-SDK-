@@ -10,7 +10,7 @@ import time
 
 try:
     from fuse import FUSE, Operations
-except ModuleNotFoundError:  # pragma: no cover
+except (ModuleNotFoundError, OSError):  # pragma: no cover
     FUSE = None
     Operations = object
 
@@ -162,12 +162,15 @@ def main() -> None:
     args = parser.parse_args()
 
     if FUSE is None:
-        if platform.system().lower().startswith("win"):
+        system = platform.system().lower()
+        if system.startswith("win"):
             raise RuntimeError(
                 "FUSE backend unavailable. Install WinFSP + a Python FUSE shim (e.g. winfspy) "
                 "or use a Linux/macOS environment with fusepy."
             )
-        raise RuntimeError("FUSE backend unavailable. Install fusepy (pip install fusepy).")
+        raise RuntimeError(
+            "FUSE backend unavailable. Install libfuse + fusepy (Linux: libfuse + pip install fusepy)."
+        )
 
     lib_path = resolve_library_path(args.lib)
     bindings = MyceliaBindings(lib_path)
